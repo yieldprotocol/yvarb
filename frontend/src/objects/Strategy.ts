@@ -1,4 +1,4 @@
-import { IERC20Address } from "../balances";
+import { IERC20Address, SeriesId } from "../balances";
 import { ContractAddress, WETH, YIELD_ST_ETH_LEVER } from "../contracts";
 
 export enum AssetId {
@@ -42,6 +42,8 @@ export interface Strategy {
   lever: ContractAddress;
   ilkId: AssetId;
   baseId: AssetId;
+  /** Manually ship the series Ids with the strategy  */
+  series: string[]; // seriesID type?
 }
 
 /**
@@ -68,5 +70,6 @@ export const STRATEGIES: { [strat in StrategyName]: Strategy } = {
     lever: YIELD_ST_ETH_LEVER,
     ilkId: AssetId.WStEth,
     baseId: AssetId.WEth,
+    series: ["0x303030370000" as SeriesId],
   },
 };
