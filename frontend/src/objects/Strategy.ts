@@ -42,7 +42,8 @@ export interface Strategy {
   lever: ContractAddress;
   ilkId: AssetId;
   baseId: AssetId;
-  /** Manually ship the series Ids with the strategy  */
+
+  /** Manually ship the series Ids with the strategy - i think this is reasonable  */
   series: string[]; // seriesID type?
 }
 
@@ -63,6 +64,12 @@ export const getInvestToken = ({
   throw new Error("Unimplemented");
 };
 
+
+/** 
+ * TODO: Maybe we move this out to a separate 'config' file? 
+ * (which I guess this file is effectively. 
+ * - but maybe we make it more explicit that this is where one would 'add strategies') 
+ * */
 export const STRATEGIES: { [strat in StrategyName]: Strategy } = {
   [StrategyName.WStEth]: {
     investToken: InvestTokenType.FyToken,
@@ -72,4 +79,13 @@ export const STRATEGIES: { [strat in StrategyName]: Strategy } = {
     baseId: AssetId.WEth,
     series: ["0x303030370000" as SeriesId],
   },
+  [StrategyName.WStEth]: {
+    investToken: InvestTokenType.FyToken,
+    outToken: [WETH, AssetId.WEth],
+    lever: YIELD_ST_ETH_LEVER,
+    ilkId: AssetId.WStEth,
+    baseId: AssetId.WEth,
+    series: ["0x303030370000" as SeriesId],
+  },
+
 };
