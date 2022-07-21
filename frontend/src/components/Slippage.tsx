@@ -3,16 +3,12 @@
  */
 
 import { BigNumber } from "ethers";
-import React from "react";
+import React, { useState } from "react";
 import "./Slippage.scss";
 
 export interface Properties {
   onChange(value: number): void;
   value: number;
-}
-
-interface State {
-  open: boolean;
 }
 
 const OPTIONS: { value: number; label: string }[] = [
@@ -24,52 +20,43 @@ const OPTIONS: { value: number; label: string }[] = [
 
 export const SLIPPAGE_OPTIONS = OPTIONS;
 
-export function addSlippage(num: BigNumber, slippage: number) {
-  return num.mul(1000 + slippage).div(1000);
-}
+export const useSlippage = () => useState(SLIPPAGE_OPTIONS[1].value);
 
-export default class Slippage extends React.Component<Properties, State> {
-  constructor(props: Properties) {
-    super(props);
-    this.state = { open: false };
-  }
+export const addSlippage = (num: BigNumber, slippage: number) =>
+  num.mul(1000 + slippage).div(1000);
 
-  render(): React.ReactNode {
-    return (
-      <div className="slippage">
-        <p
-          className="slippage_expand"
-          onClick={() => this.setState({ open: !this.state.open })}
-        >
-          {this.state.open ? "Slippage ⯅" : "Slippage ⯆"}
-        </p>
-        {this.state.open ? (
-          <React.Fragment>
-            {OPTIONS.map(({ value, label }) => {
-              const checked: boolean = this.props.value === value;
-              return (
-                <label
-                  key={value}
-                  className={
-                    checked ? "slippage_option checked" : "slippage_option"
-                  }
-                >
-                  <input
-                    type="radio"
-                    name={label}
-                    value={value}
-                    onChange={(val) =>
-                      this.props.onChange(parseInt(val.target.value))
-                    }
-                    checked={checked}
-                  />
-                  {label}
-                </label>
-              );
-            })}
-          </React.Fragment>
-        ) : null}
-      </div>
-    );
-  }
-}
+export const removeSlippage = (num: BigNumber, slippage: number) =>
+  num.mul(1000 - slippage).div(1000);
+
+export const Slippage = ({ onChange, value }: Properties) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="slippage">
+      <p className="slippage_expand" onClick={() => setOpen(!open)}>
+        {open ? "Slippage ⯅" : "Slippage ⯆"}
+      </p>
+      {open
+        ? OPTIONS.map((option) => {
+            const checked: boolean = value === option.value;
+            return (
+              <label
+                key={option.value}
+                className={
+                  checked ? "slippage_option checked" : "slippage_option"
+                }
+              >
+                <input
+                  type="radio"
+                  name={option.label}
+                  value={option.value}
+                  onChange={(val) => onChange(parseInt(val.target.value))}
+                  checked={checked}
+                />
+                {option.label}
+              </label>
+            );
+          })
+        : null}
+    </div>
+  );
+};
