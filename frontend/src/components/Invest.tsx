@@ -261,7 +261,8 @@ export const Invest = ({
       if (level.lt(0)) return ApprovalState.Undercollateralized;
 
       // Check balance
-      if (balanceInput.lt(balance)) return ApprovalState.NotEnoughFunds;
+      console.log(balanceInput.toString(), balance.toString() )
+      if (balanceInput.gte(balance)) return ApprovalState.NotEnoughFunds;
 
       // Now check for approval
       const approval = await investToken.allowance(
@@ -302,6 +303,7 @@ export const Invest = ({
           return ApprovalState.UnknownError;
         }
       }
+      // If no other criteria match return 'transactable
       return ApprovalState.Transactable;
     };
     void checkApprovalState().then((ap) => {
