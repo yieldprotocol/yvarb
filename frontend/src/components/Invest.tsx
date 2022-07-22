@@ -20,7 +20,13 @@ import { IOracle__factory } from "../contracts/IOracle.sol";
 import { zeroPad } from "ethers/lib/utils";
 import { FYToken } from "../contracts/YieldStEthLever.sol";
 import { SeriesObject } from "../objects/Vault";
-import { AssetId, getInvestToken, InvestTokenType, Strategy, Token } from "../objects/Strategy";
+import {
+  AssetId,
+  getInvestToken,
+  InvestTokenType,
+  Strategy,
+  Token,
+} from "../objects/Strategy";
 import { Loading } from "./Loading";
 
 interface Properties {
@@ -62,7 +68,7 @@ const computeStEthCollateral = async (
 ): Promise<BigNumber> => {
   // - netInvestAmount = baseAmount + borrowAmount - fee
   const fyWeth = await getFyToken(seriesId, contracts, account);
-  const fee = await fyWeth.flashFee(fyWeth.address, toBorrow);
+  const fee = BigNumber.from(1); // await fyWeth.flashFee(fyWeth.address, toBorrow) ;
   const netInvestAmount = baseAmount.add(toBorrow).sub(fee);
   // - sellFyWeth: FyWEth -> WEth
   const pool = await getPool(seriesId, contracts, account);
@@ -268,12 +274,23 @@ export const Invest = ({
       if (strategy.lever === YIELD_ST_ETH_LEVER) {
         const lever = getContract(strategy.lever, contracts, account);
         try {
-          await lever.callStatic.invest(
-            balanceInput,
-            toBorrow,
-            BigNumber.from(0),
-            seriesId
+
+          console.log(
+            lever.interface.encodeFunctionData("invest", [
+              balanceInput,
+              toBorrow,
+              BigNumber.from(0),
+              seriesId,
+            ])
           );
+
+          // await lever.callStatic.invest(
+          //   balanceInput,
+          //   toBorrow,
+          //   BigNumber.from(0),
+          //   seriesId
+          // );
+
         } catch (e) {
           // Checking isn't perfect, so try to parse the failure reason
           if (
@@ -456,7 +473,7 @@ export const Invest = ({
   ].concat(series.map((s) => [s.seriesId, getInvestToken(strategy)]))) {
     const balance = balances[address];
     if (balance === undefined) {
-      return <Loading/>;
+      return <Loading />;
     }
     balancesAndDebtElements.push(
       <ValueDisplay
@@ -471,7 +488,7 @@ export const Invest = ({
 
   let investTokenBalance: BigNumber | undefined;
   if (seriesId !== undefined) investTokenBalance = balances[seriesId];
-  if (investTokenBalance === undefined) return <Loading/>;
+  if (investTokenBalance === undefined) return <Loading />;
   return (
     <div className="invest">
       {balancesAndDebtElements}
