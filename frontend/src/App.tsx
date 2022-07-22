@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import "./App.css";
 import { ConnectWallet } from "./components/ConnectWallet";
 import { Invest } from "./components/Invest";
@@ -11,14 +11,14 @@ import {
 } from "./objects/Vault";
 import { Vault as VaultComponent } from "./components/Vault";
 import { Tabs, TabsType } from "./components/Tabs";
-import { CAULDRON, Contracts, getContract } from "./contracts";
+import { CAULDRON, Contracts, getContract, WETH } from "./contracts";
 import {
   Balances as AddressBalances,
   loadBalance,
   loadFyTokenBalance,
   SeriesId,
 } from "./balances";
-import { providers } from "ethers";
+import { ethers, providers } from "ethers";
 import { useEffect } from "react";
 import { useRef } from "react";
 import { MutableRefObject } from "react";
@@ -80,12 +80,25 @@ export const App = ({
       .send("eth_requestAccounts", [])
       // eth_requestAccounts is standard, but not supported by Ganache. There,
       // just requesting the accounts will work fine:
-      .catch(() => provider.send('eth_accounts', []))
+      .catch(() => provider.send("eth_accounts", []))
       // Use the first address
       .then(([selectedAddress]: string[]) => {
         setAddress(selectedAddress);
       });
   }, [provider, chainId]);
+
+  /* helper function to add eTH if required on tenderly test nets */
+
+  const fillEther = useCallback(async () => {
+    try {
+      const tenderlyProvider = new ethers.providers.JsonRpcProvider('https://rpc.tenderly.co/fork/4cff3ab9-1b49-4b28-a9a7-ed50d3857729');
+      const transactionParameters = [[address], ethers.utils.hexValue(BigInt('100000000000000000000'))];
+      const c = await tenderlyProvider?.send('tenderly_addBalance', transactionParameters);
+      console.log('Eth funded.' )
+    } catch (e) {
+      console.log('Could not fill eth on tenderly fork');
+    }
+  }, [address]);
 
   // We reinitialize it whenever the user changes their account.
   useEthereumListener(
@@ -284,5 +297,14 @@ export const App = ({
     })),
   ];
 
-  return <Tabs tabs={elements} />;
+  return (
+    <div>
+      <Tabs tabs={elements} />
+      <input
+        value="Fund Eth (Tenderly testing)"
+        type="button"
+        onClick= {()=>fillEther()}
+      />
+    </div>
+  );
 };
