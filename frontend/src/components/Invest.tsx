@@ -278,18 +278,18 @@ export const Invest = ({
 
           console.log(
             lever.interface.encodeFunctionData("invest", [
+              seriesId,
               balanceInput,
               toBorrow,
               BigNumber.from(0),
-              seriesId,
             ])
           );
 
           // await lever.callStatic.invest(
+          //   seriesId
           //   balanceInput,
           //   toBorrow,
           //   BigNumber.from(0),
-          //   seriesId
           // );
 
         } catch (e) {
@@ -347,17 +347,17 @@ export const Invest = ({
       const lever = getContract(strategy.lever, contracts, account);
       const gasLimit = (
         await lever.estimateGas.invest(
+          seriesId,
           balanceInput,
           toBorrow,
           stEthMinCollateral,
-          seriesId
         )
       ).mul(2);
       const invextTx = await lever.invest(
+        seriesId,
         balanceInput,
         toBorrow,
         stEthMinCollateral,
-        seriesId,
         { gasLimit, gasPrice }
       );
       await invextTx.wait();
