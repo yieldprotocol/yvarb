@@ -41,7 +41,7 @@ export interface ZeroStateInterface extends utils.Interface {
     "hoax(address,address)": FunctionFragment;
     "hoax(address,address,uint256)": FunctionFragment;
     "hoax(address,uint256)": FunctionFragment;
-    "leverUp(uint128,uint128)": FunctionFragment;
+    "invest(uint128,uint128)": FunctionFragment;
     "rewind(uint256)": FunctionFragment;
     "setUp()": FunctionFragment;
     "skip(uint256)": FunctionFragment;
@@ -67,7 +67,7 @@ export interface ZeroStateInterface extends utils.Interface {
       | "hoax(address,address)"
       | "hoax(address,address,uint256)"
       | "hoax(address,uint256)"
-      | "leverUp"
+      | "invest"
       | "rewind"
       | "setUp"
       | "skip"
@@ -139,7 +139,7 @@ export interface ZeroStateInterface extends utils.Interface {
     values: [PromiseOrValue<string>, PromiseOrValue<BigNumberish>]
   ): string;
   encodeFunctionData(
-    functionFragment: "leverUp",
+    functionFragment: "invest",
     values: [PromiseOrValue<BigNumberish>, PromiseOrValue<BigNumberish>]
   ): string;
   encodeFunctionData(
@@ -220,7 +220,7 @@ export interface ZeroStateInterface extends utils.Interface {
     functionFragment: "hoax(address,uint256)",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "leverUp", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "invest", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "rewind", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "setUp", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "skip", data: BytesLike): Result;
@@ -540,7 +540,7 @@ export interface ZeroState extends BaseContract {
       overrides?: Overrides & { from?: PromiseOrValue<string> }
     ): Promise<ContractTransaction>;
 
-    leverUp(
+    invest(
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       overrides?: Overrides & { from?: PromiseOrValue<string> }
@@ -663,7 +663,7 @@ export interface ZeroState extends BaseContract {
     overrides?: Overrides & { from?: PromiseOrValue<string> }
   ): Promise<ContractTransaction>;
 
-  leverUp(
+  invest(
     baseAmount: PromiseOrValue<BigNumberish>,
     borrowAmount: PromiseOrValue<BigNumberish>,
     overrides?: Overrides & { from?: PromiseOrValue<string> }
@@ -784,7 +784,7 @@ export interface ZeroState extends BaseContract {
       overrides?: CallOverrides
     ): Promise<void>;
 
-    leverUp(
+    invest(
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       overrides?: CallOverrides
@@ -993,7 +993,7 @@ export interface ZeroState extends BaseContract {
       overrides?: Overrides & { from?: PromiseOrValue<string> }
     ): Promise<BigNumber>;
 
-    leverUp(
+    invest(
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       overrides?: Overrides & { from?: PromiseOrValue<string> }
@@ -1117,7 +1117,7 @@ export interface ZeroState extends BaseContract {
       overrides?: Overrides & { from?: PromiseOrValue<string> }
     ): Promise<PopulatedTransaction>;
 
-    leverUp(
+    invest(
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       overrides?: Overrides & { from?: PromiseOrValue<string> }

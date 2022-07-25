@@ -543,7 +543,7 @@ const _abi = [
         type: "uint128",
       },
     ],
-    name: "leverUp",
+    name: "invest",
     outputs: [
       {
         internalType: "bytes12",

@@ -28,14 +28,14 @@ export interface YieldStEthLeverInterface extends utils.Interface {
     "FLASH_LOAN_RETURN()": FunctionFragment;
     "approveFyToken(bytes6)": FunctionFragment;
     "cauldron()": FunctionFragment;
+    "divest(bytes12,bytes6,uint128,uint128,uint256)": FunctionFragment;
     "giver()": FunctionFragment;
     "ilkId()": FunctionFragment;
-    "invest(uint128,uint128,uint128,bytes6)": FunctionFragment;
+    "invest(bytes6,uint128,uint128,uint128)": FunctionFragment;
     "ladle()": FunctionFragment;
     "onFlashLoan(address,address,uint256,uint256,bytes)": FunctionFragment;
     "stableSwap()": FunctionFragment;
     "steth()": FunctionFragment;
-    "unwind(uint128,uint128,uint256,bytes12,bytes6)": FunctionFragment;
     "weth()": FunctionFragment;
     "wethJoin()": FunctionFragment;
     "wsteth()": FunctionFragment;
@@ -47,6 +47,7 @@ export interface YieldStEthLeverInterface extends utils.Interface {
       | "FLASH_LOAN_RETURN"
       | "approveFyToken"
       | "cauldron"
+      | "divest"
       | "giver"
       | "ilkId"
       | "invest"
@@ -54,7 +55,6 @@ export interface YieldStEthLeverInterface extends utils.Interface {
       | "onFlashLoan"
       | "stableSwap"
       | "steth"
-      | "unwind"
       | "weth"
       | "wethJoin"
       | "wsteth"
@@ -70,15 +70,25 @@ export interface YieldStEthLeverInterface extends utils.Interface {
     values: [PromiseOrValue<BytesLike>]
   ): string;
   encodeFunctionData(functionFragment: "cauldron", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "divest",
+    values: [
+      PromiseOrValue<BytesLike>,
+      PromiseOrValue<BytesLike>,
+      PromiseOrValue<BigNumberish>,
+      PromiseOrValue<BigNumberish>,
+      PromiseOrValue<BigNumberish>
+    ]
+  ): string;
   encodeFunctionData(functionFragment: "giver", values?: undefined): string;
   encodeFunctionData(functionFragment: "ilkId", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "invest",
     values: [
+      PromiseOrValue<BytesLike>,
       PromiseOrValue<BigNumberish>,
       PromiseOrValue<BigNumberish>,
-      PromiseOrValue<BigNumberish>,
-      PromiseOrValue<BytesLike>
+      PromiseOrValue<BigNumberish>
     ]
   ): string;
   encodeFunctionData(functionFragment: "ladle", values?: undefined): string;
@@ -97,16 +107,6 @@ export interface YieldStEthLeverInterface extends utils.Interface {
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "steth", values?: undefined): string;
-  encodeFunctionData(
-    functionFragment: "unwind",
-    values: [
-      PromiseOrValue<BigNumberish>,
-      PromiseOrValue<BigNumberish>,
-      PromiseOrValue<BigNumberish>,
-      PromiseOrValue<BytesLike>,
-      PromiseOrValue<BytesLike>
-    ]
-  ): string;
   encodeFunctionData(functionFragment: "weth", values?: undefined): string;
   encodeFunctionData(functionFragment: "wethJoin", values?: undefined): string;
   encodeFunctionData(functionFragment: "wsteth", values?: undefined): string;
@@ -124,6 +124,7 @@ export interface YieldStEthLeverInterface extends utils.Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "cauldron", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "divest", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "giver", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ilkId", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "invest", data: BytesLike): Result;
@@ -134,7 +135,6 @@ export interface YieldStEthLeverInterface extends utils.Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "stableSwap", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "steth", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "unwind", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "weth", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "wethJoin", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "wsteth", data: BytesLike): Result;
@@ -179,15 +179,24 @@ export interface YieldStEthLever extends BaseContract {
 
     cauldron(overrides?: CallOverrides): Promise<[string]>;
 
+    divest(
+      vaultId: PromiseOrValue<BytesLike>,
+      seriesId: PromiseOrValue<BytesLike>,
+      ink: PromiseOrValue<BigNumberish>,
+      art: PromiseOrValue<BigNumberish>,
+      minWeth: PromiseOrValue<BigNumberish>,
+      overrides?: Overrides & { from?: PromiseOrValue<string> }
+    ): Promise<ContractTransaction>;
+
     giver(overrides?: CallOverrides): Promise<[string]>;
 
     ilkId(overrides?: CallOverrides): Promise<[string]>;
 
     invest(
+      seriesId: PromiseOrValue<BytesLike>,
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       minCollateral: PromiseOrValue<BigNumberish>,
-      seriesId: PromiseOrValue<BytesLike>,
       overrides?: Overrides & { from?: PromiseOrValue<string> }
     ): Promise<ContractTransaction>;
 
@@ -205,15 +214,6 @@ export interface YieldStEthLever extends BaseContract {
     stableSwap(overrides?: CallOverrides): Promise<[string]>;
 
     steth(overrides?: CallOverrides): Promise<[string]>;
-
-    unwind(
-      ink: PromiseOrValue<BigNumberish>,
-      art: PromiseOrValue<BigNumberish>,
-      minWeth: PromiseOrValue<BigNumberish>,
-      vaultId: PromiseOrValue<BytesLike>,
-      seriesId: PromiseOrValue<BytesLike>,
-      overrides?: Overrides & { from?: PromiseOrValue<string> }
-    ): Promise<ContractTransaction>;
 
     weth(overrides?: CallOverrides): Promise<[string]>;
 
@@ -233,15 +233,24 @@ export interface YieldStEthLever extends BaseContract {
 
   cauldron(overrides?: CallOverrides): Promise<string>;
 
+  divest(
+    vaultId: PromiseOrValue<BytesLike>,
+    seriesId: PromiseOrValue<BytesLike>,
+    ink: PromiseOrValue<BigNumberish>,
+    art: PromiseOrValue<BigNumberish>,
+    minWeth: PromiseOrValue<BigNumberish>,
+    overrides?: Overrides & { from?: PromiseOrValue<string> }
+  ): Promise<ContractTransaction>;
+
   giver(overrides?: CallOverrides): Promise<string>;
 
   ilkId(overrides?: CallOverrides): Promise<string>;
 
   invest(
+    seriesId: PromiseOrValue<BytesLike>,
     baseAmount: PromiseOrValue<BigNumberish>,
     borrowAmount: PromiseOrValue<BigNumberish>,
     minCollateral: PromiseOrValue<BigNumberish>,
-    seriesId: PromiseOrValue<BytesLike>,
     overrides?: Overrides & { from?: PromiseOrValue<string> }
   ): Promise<ContractTransaction>;
 
@@ -259,15 +268,6 @@ export interface YieldStEthLever extends BaseContract {
   stableSwap(overrides?: CallOverrides): Promise<string>;
 
   steth(overrides?: CallOverrides): Promise<string>;
-
-  unwind(
-    ink: PromiseOrValue<BigNumberish>,
-    art: PromiseOrValue<BigNumberish>,
-    minWeth: PromiseOrValue<BigNumberish>,
-    vaultId: PromiseOrValue<BytesLike>,
-    seriesId: PromiseOrValue<BytesLike>,
-    overrides?: Overrides & { from?: PromiseOrValue<string> }
-  ): Promise<ContractTransaction>;
 
   weth(overrides?: CallOverrides): Promise<string>;
 
@@ -287,15 +287,24 @@ export interface YieldStEthLever extends BaseContract {
 
     cauldron(overrides?: CallOverrides): Promise<string>;
 
+    divest(
+      vaultId: PromiseOrValue<BytesLike>,
+      seriesId: PromiseOrValue<BytesLike>,
+      ink: PromiseOrValue<BigNumberish>,
+      art: PromiseOrValue<BigNumberish>,
+      minWeth: PromiseOrValue<BigNumberish>,
+      overrides?: CallOverrides
+    ): Promise<void>;
+
     giver(overrides?: CallOverrides): Promise<string>;
 
     ilkId(overrides?: CallOverrides): Promise<string>;
 
     invest(
+      seriesId: PromiseOrValue<BytesLike>,
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       minCollateral: PromiseOrValue<BigNumberish>,
-      seriesId: PromiseOrValue<BytesLike>,
       overrides?: CallOverrides
     ): Promise<string>;
 
@@ -313,15 +322,6 @@ export interface YieldStEthLever extends BaseContract {
     stableSwap(overrides?: CallOverrides): Promise<string>;
 
     steth(overrides?: CallOverrides): Promise<string>;
-
-    unwind(
-      ink: PromiseOrValue<BigNumberish>,
-      art: PromiseOrValue<BigNumberish>,
-      minWeth: PromiseOrValue<BigNumberish>,
-      vaultId: PromiseOrValue<BytesLike>,
-      seriesId: PromiseOrValue<BytesLike>,
-      overrides?: CallOverrides
-    ): Promise<void>;
 
     weth(overrides?: CallOverrides): Promise<string>;
 
@@ -344,15 +344,24 @@ export interface YieldStEthLever extends BaseContract {
 
     cauldron(overrides?: CallOverrides): Promise<BigNumber>;
 
+    divest(
+      vaultId: PromiseOrValue<BytesLike>,
+      seriesId: PromiseOrValue<BytesLike>,
+      ink: PromiseOrValue<BigNumberish>,
+      art: PromiseOrValue<BigNumberish>,
+      minWeth: PromiseOrValue<BigNumberish>,
+      overrides?: Overrides & { from?: PromiseOrValue<string> }
+    ): Promise<BigNumber>;
+
     giver(overrides?: CallOverrides): Promise<BigNumber>;
 
     ilkId(overrides?: CallOverrides): Promise<BigNumber>;
 
     invest(
+      seriesId: PromiseOrValue<BytesLike>,
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       minCollateral: PromiseOrValue<BigNumberish>,
-      seriesId: PromiseOrValue<BytesLike>,
       overrides?: Overrides & { from?: PromiseOrValue<string> }
     ): Promise<BigNumber>;
 
@@ -370,15 +379,6 @@ export interface YieldStEthLever extends BaseContract {
     stableSwap(overrides?: CallOverrides): Promise<BigNumber>;
 
     steth(overrides?: CallOverrides): Promise<BigNumber>;
-
-    unwind(
-      ink: PromiseOrValue<BigNumberish>,
-      art: PromiseOrValue<BigNumberish>,
-      minWeth: PromiseOrValue<BigNumberish>,
-      vaultId: PromiseOrValue<BytesLike>,
-      seriesId: PromiseOrValue<BytesLike>,
-      overrides?: Overrides & { from?: PromiseOrValue<string> }
-    ): Promise<BigNumber>;
 
     weth(overrides?: CallOverrides): Promise<BigNumber>;
 
@@ -399,15 +399,24 @@ export interface YieldStEthLever extends BaseContract {
 
     cauldron(overrides?: CallOverrides): Promise<PopulatedTransaction>;
 
+    divest(
+      vaultId: PromiseOrValue<BytesLike>,
+      seriesId: PromiseOrValue<BytesLike>,
+      ink: PromiseOrValue<BigNumberish>,
+      art: PromiseOrValue<BigNumberish>,
+      minWeth: PromiseOrValue<BigNumberish>,
+      overrides?: Overrides & { from?: PromiseOrValue<string> }
+    ): Promise<PopulatedTransaction>;
+
     giver(overrides?: CallOverrides): Promise<PopulatedTransaction>;
 
     ilkId(overrides?: CallOverrides): Promise<PopulatedTransaction>;
 
     invest(
+      seriesId: PromiseOrValue<BytesLike>,
       baseAmount: PromiseOrValue<BigNumberish>,
       borrowAmount: PromiseOrValue<BigNumberish>,
       minCollateral: PromiseOrValue<BigNumberish>,
-      seriesId: PromiseOrValue<BytesLike>,
       overrides?: Overrides & { from?: PromiseOrValue<string> }
     ): Promise<PopulatedTransaction>;
 
@@ -425,15 +434,6 @@ export interface YieldStEthLever extends BaseContract {
     stableSwap(overrides?: CallOverrides): Promise<PopulatedTransaction>;
 
     steth(overrides?: CallOverrides): Promise<PopulatedTransaction>;
-
-    unwind(
-      ink: PromiseOrValue<BigNumberish>,
-      art: PromiseOrValue<BigNumberish>,
-      minWeth: PromiseOrValue<BigNumberish>,
-      vaultId: PromiseOrValue<BytesLike>,
-      seriesId: PromiseOrValue<BytesLike>,
-      overrides?: Overrides & { from?: PromiseOrValue<string> }
-    ): Promise<PopulatedTransaction>;
 
     weth(overrides?: CallOverrides): Promise<PopulatedTransaction>;
 
