@@ -142,19 +142,19 @@ export const Vault = ({
     if (finalWeth === undefined) return; // Not yet ready for unwinding
     if (strategy.lever === YIELD_ST_ETH_LEVER) {
       const lever = getContract(strategy.lever, contracts, account);
-      const gasLimit = await lever.estimateGas.unwind(
-        balance.ink,
-        balance.art,
-        finalWeth,
-        vaultId,
-        vault.seriesId
-      );
-      const tx = await lever.unwind(
-        balance.ink,
-        balance.art,
-        finalWeth,
+      const gasLimit = await lever.estimateGas.divest(
         vaultId,
         vault.seriesId,
+        balance.ink,
+        balance.art,
+        finalWeth,
+      );
+      const tx = await lever.divest(
+        vaultId,
+        vault.seriesId,
+        balance.ink,
+        balance.art,
+        finalWeth,
         { gasLimit }
       );
       await tx.wait();
