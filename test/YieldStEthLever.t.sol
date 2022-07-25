@@ -70,7 +70,7 @@ abstract contract ZeroState is Test {
     }
 
     /// @notice Create a vault.
-    function leverUp(uint128 baseAmount, uint128 borrowAmount)
+    function invest(uint128 baseAmount, uint128 borrowAmount)
         public
         returns (bytes12 vaultId)
     {
@@ -81,10 +81,10 @@ abstract contract ZeroState is Test {
             (stableSwap.get_dy(0, 1, wethAmount) * 80) / 100
         );
         vaultId = lever.invest(
+            seriesId,
             baseAmount,
             borrowAmount,
-            minCollateral,
-            seriesId
+            minCollateral
         );
     }
 }
@@ -105,7 +105,7 @@ abstract contract VaultCreatedState is ZeroState {
         uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
         uint256 minweth = ((collateralValueWeth - balances.art) * 80) / 100;
 
-        lever.unwind(balances.ink, balances.art, minweth, vaultId, seriesId);
+        lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
         return vaultId;
     }
 }
@@ -160,18 +160,14 @@ contract ZeroStateTest is ZeroState {
 
         // Unreasonable expectation: twice the total value as collateral?
         uint256 wethAmount = pool.sellFYTokenPreview(baseAmount + borrowAmount);
-        uint128 minCollateral = uint128(stableSwap.get_dy(0, 1, wethAmount) * 2);
+        uint128 minCollateral = uint128(
+            stableSwap.get_dy(0, 1, wethAmount) * 2
+        );
 
         vm.expectRevert(SlippageFailure.selector);
-        lever.invest(
-            baseAmount,
-            borrowAmount,
-            minCollateral,
-            seriesId
-        );
+        lever.invest(seriesId, baseAmount, borrowAmount, minCollateral);
     }
 }
-
 
 contract VaultCreatedStateTest is VaultCreatedState {
     function testRepay() public {
@@ -211,7 +207,7 @@ contract VaultCreatedStateTest is VaultCreatedState {
         assertEq(steth.balanceOf(address(lever)), 0);
         assertEq(fyToken.balanceOf(address(lever)), 0);
     }
-    
+
     function testRepayRevertOnSlippage() public {
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
 
@@ -221,13 +217,13 @@ contract VaultCreatedStateTest is VaultCreatedState {
         uint256 minweth = (collateralValueWeth - balances.art) * 2;
 
         vm.expectRevert(SlippageFailure.selector);
-        lever.unwind(balances.ink, balances.art, minweth, vaultId, seriesId);
+        lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
     }
 
     function testCloseRevertOnSlippage() public {
         DataTypes.Series memory series_ = cauldron.series(seriesId);
         vm.warp(series_.maturity);
-        
+
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
 
         // Rough calculation of the minimal amount of weth that we want back.
@@ -236,6 +232,6 @@ contract VaultCreatedStateTest is VaultCreatedState {
         uint256 minweth = (collateralValueWeth - balances.art) * 2;
 
         vm.expectRevert(SlippageFailure.selector);
-        lever.unwind(balances.ink, balances.art, minweth, vaultId, seriesId);
+        lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
     }
 }
