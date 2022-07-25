@@ -68,7 +68,7 @@ const computeStEthCollateral = async (
 ): Promise<BigNumber> => {
   // - netInvestAmount = baseAmount + borrowAmount - fee
   const fyWeth = await getFyToken(seriesId, contracts, account);
-  const fee = BigNumber.from(1); // await fyWeth.flashFee(fyWeth.address, toBorrow) ;
+  const fee = await fyWeth.flashFee(fyWeth.address, toBorrow);
   const netInvestAmount = baseAmount.add(toBorrow).sub(fee);
   // - sellFyWeth: FyWEth -> WEth
   const pool = await getPool(seriesId, contracts, account);
