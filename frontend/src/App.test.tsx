@@ -1,45 +1,25 @@
-// Polyfill setImmediate
-import "core-js/modules/web.immediate";
-import "@testing-library/jest-dom";
-import * as ganache from "ganache";
-import { ExternalProvider } from "@ethersproject/providers";
 import { App } from "./App";
 import { act, render, screen } from "@testing-library/react";
-import { runSetup } from "../../scripts/YieldStEthLever/ganache";
-import { providers } from "ethers";
+import "@testing-library/jest-dom";
+import { ethers } from "ethers";
 
 describe("App", () => {
   it("should tell the user to install an provider", () => {
     render(<App ethereum={undefined} />);
     expect(screen.getByText("No wallet detected.")).toBeInTheDocument();
   });
-/*
-  describe("with an Ethereum injector", () => {
-    let ganacheProvider: ganache.EthereumProvider;
-    beforeEach(async () => {
-      ganacheProvider = ganache.provider({
-        logging: { quiet: true },
-        fork: { network: "mainnet", blockNumber: 15039442 },
-        wallet: {
-          mnemonic:
-            "test test test test test test test test test test test junk",
-          unlockedAccounts: ["0x3b870db67a45611CF4723d44487EAF398fAc51E3"],
-        },
-      });
-      await runSetup(
-        new providers.Web3Provider(
-          ganacheProvider as unknown as ExternalProvider
-        )
-      );
-      console.log("done with setup");
-    });
 
-    afterEach(async () => {
-      await ganacheProvider.disconnect();
+  describe("with an Ethereum injector", () => {
+    let provider: ethers.providers.JsonRpcProvider;
+    const overrideAddress = "0xefd67615d66e3819539021d40e155e1a6107f283";
+    beforeAll(() => {
+      provider = new ethers.providers.JsonRpcProvider(
+        "https://rpc.tenderly.co/fork/709e6131-c453-468d-9512-ab55a416516d"
+      );
     });
 
     it("shows a connect button", async () => {
-      render(<App ethereum={ganacheProvider as unknown as ExternalProvider} />);
+      render(<App ethereum={provider} overrideAddress={overrideAddress} />);
 
       expect(
         screen.getByText("Please connect to your wallet.")
@@ -52,7 +32,12 @@ describe("App", () => {
         button.click();
       });
 
-      const els = await screen.findByText("Balance:");
-    });
-  });*/
+      const balances = await screen.findAllByText(
+        "Balance:",
+        {},
+        { timeout: 5000 }
+      );
+      expect(balances.length).toBe(2);
+    }, 7000);
+  });
 });

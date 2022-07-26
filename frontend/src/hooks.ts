@@ -36,7 +36,11 @@ export const useInvalidator = (): [Invalidator, () => void] => {
  * @param windowEthereum The window.ethereum provider. Is not used here to keep
  *  this function local.
  */
-export const useEthereumListener = (event: string, fn: providers.Listener, windowEthereum?: providers.Web3Provider) => {
+export const useEthereumListener = (
+  event: string,
+  fn: providers.Listener,
+  windowEthereum?: providers.Web3Provider | providers.JsonRpcProvider
+) => {
   useEffect(() => {
     if (windowEthereum === undefined) return;
     windowEthereum.on(event, fn);

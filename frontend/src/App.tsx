@@ -35,8 +35,10 @@ const POLLING_INTERVAL = 5_000;
 
 export const App = ({
   ethereum,
+  overrideAddress,
 }: {
-  ethereum: providers.ExternalProvider | undefined;
+  ethereum: providers.Web3Provider | providers.JsonRpcProvider | undefined;
+  overrideAddress?: string;
 }) => {
   /**
    * This pulse will update in an interval. Subscribe to it to update effects
@@ -59,10 +61,12 @@ export const App = ({
 
   // When connecting the wallet, the provider will be set. This update in turn
   // will causes an update to the selected account.
-  const [provider, setProvider] = useState<providers.Web3Provider>();
+  const [provider, setProvider] = useState<
+    providers.Web3Provider | providers.JsonRpcProvider
+  >();
 
   const [chainId, setChainId] = useState<string | undefined>();
-  useEthereumListener("chainChanged", setChainId);
+  useEthereumListener("chainChanged", setChainId, undefined);
 
   /**
    * The currently connected address. Will be set asynchronous instead of
@@ -78,14 +82,14 @@ export const App = ({
     // It returns a promise that will resolve to the user's address.
     void provider
       .send("eth_requestAccounts", [])
-      // eth_requestAccounts is standard, but not supported by Ganache. There,
-      // just requesting the accounts will work fine:
-      .catch(() => provider.send("eth_accounts", []))
+      // If loading fails, we will assume we already have access and just list
+      // the accounts.
+      .catch(() => provider.listAccounts())
       // Use the first address
       .then(([selectedAddress]: string[]) => {
         setAddress(selectedAddress);
       });
-  }, [provider, chainId]);
+  }, [provider, chainId, overrideAddress]);
 
   /* helper function to add eTH if required on tenderly test nets */
 
@@ -295,7 +299,7 @@ export const App = ({
   if (signer === undefined) {
     return (
       <ConnectWallet
-        connectWallet={() => setProvider(new providers.Web3Provider(ethereum))}
+        connectWallet={() => setProvider(ethereum)}
         networkError={networkError}
         dismiss={() => setNetworkError(undefined)}
       />
