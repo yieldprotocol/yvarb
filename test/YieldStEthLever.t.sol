@@ -95,7 +95,7 @@ abstract contract VaultCreatedState is ZeroState {
     function setUp() public override {
         super.setUp();
         // vaultId = lever(2e18, 4e18);
-        vaultId = lever.invest(seriesId, 2e18, 4e18, 0);
+        vaultId = invest(2e18, 4e18);
 
     }
 
@@ -115,7 +115,7 @@ abstract contract VaultCreatedState is ZeroState {
 contract ZeroStateTest is ZeroState {
     function testVault() public {
         // bytes12 vaultId = invest(2e18, 6e18);
-        bytes12 vaultId = lever.invest(seriesId, 2e18, 5e18, 0);
+        bytes12 vaultId = invest(2e18, 5e18);
         DataTypes.Vault memory vault = cauldron.vaults(vaultId);
         assertEq(vault.owner, address(this));
 
@@ -128,7 +128,7 @@ contract ZeroStateTest is ZeroState {
 
     function testLever() public {
         // bytes12 vaultId = invest(2e18, 5e18);
-        bytes12 vaultId = lever.invest(seriesId, 2e18, 5e18, 0);
+        bytes12 vaultId = invest(2e18, 5e18);
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         assertEq(balances.art, 5e18);
 

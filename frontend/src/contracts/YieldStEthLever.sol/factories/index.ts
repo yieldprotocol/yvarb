@@ -29,4 +29,5 @@ export { Join__factory } from "./Join__factory";
 export { SafeERC20Namer__factory } from "./SafeERC20Namer__factory";
 export { Script__factory } from "./Script__factory";
 export { Vm__factory } from "./Vm__factory";
+export { Weth__factory } from "./Weth__factory";
 export { YieldLeverBase__factory } from "./YieldLeverBase__factory";

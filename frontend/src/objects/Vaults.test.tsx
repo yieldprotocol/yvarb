@@ -4,17 +4,17 @@ import { Contracts } from "../contracts";
 import { AssetId } from "./Strategy";
 import { loadSeriesAndStartListening, loadVaultsAndStartListening } from "./Vault";
 
-const {INFURA_PROJECT_ID} = process.env;
+const {ALCHEMY_MAINNET_RPC} = process.env;
 
 describe('loadVaultsAndStartListening', () => {
     const vaultOwner = "0xefd67615d66e3819539021d40e155e1a6107f283";
     let provider: ethers.providers.Provider;
     let signer: ethers.Signer;
     beforeAll(() => {
-        if (INFURA_PROJECT_ID === undefined) {
-            throw new Error('To run this test, the INFURA_PROJECT_ID environment variable need to be set');
+        if (ALCHEMY_MAINNET_RPC === undefined) {
+            throw new Error('To run this test, the ALCHEMY_MAINNET_RPC environment variable need to be set');
         }
-        provider = new ethers.providers.InfuraProvider('mainnet', INFURA_PROJECT_ID);
+        provider = new ethers.providers.JsonRpcProvider(ALCHEMY_MAINNET_RPC);
         signer = new VoidSigner(vaultOwner).connect(provider);
     });
 
@@ -37,10 +37,10 @@ describe('loadSeriesAndStartListening', () => {
     let provider: ethers.providers.Provider;
     let signer: ethers.Signer;
     beforeAll(() => {
-        if (INFURA_PROJECT_ID === undefined) {
-            throw new Error('To run this test, the INFURA_PROJECT_ID environment variable need to be set');
+        if (ALCHEMY_MAINNET_RPC === undefined) {
+            throw new Error('To run this test, the ALCHEMY_MAINNET_RPC environment variable need to be set');
         }
-        provider = new ethers.providers.InfuraProvider('mainnet', INFURA_PROJECT_ID);
+        provider = new ethers.providers.JsonRpcProvider(ALCHEMY_MAINNET_RPC);
         signer = new VoidSigner(address).connect(provider);
     });
 
