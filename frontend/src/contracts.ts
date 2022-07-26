@@ -4,10 +4,8 @@ import { SeriesId } from "./balances";
 import { Cauldron, Cauldron__factory } from "./contracts/Cauldron.sol";
 import {
   FYToken,
-  IERC20,
   YieldStEthLever,
   FYToken__factory,
-  IERC20__factory,
   YieldStEthLever__factory,
   YieldLadle,
   YieldLadle__factory,
