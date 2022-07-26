@@ -26,4 +26,4 @@ jobs:
         run: forge snapshot --check --fork-url ${{ secrets.ALCHEMY_MAINNET_RPC }}
 
       - name: Run tests
-        run: forge test -vvv --fork-url ${{ secrets.ALCHEMY_MAINNET_RPC }}
+        run: forge test -vvv --fork-url ${{ secrets.ALCHEMY_MAINNET_RPC }} --gas-report
