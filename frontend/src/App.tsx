@@ -11,7 +11,7 @@ import {
 } from "./objects/Vault";
 import { Vault as VaultComponent } from "./components/Vault";
 import { Tabs, TabsType } from "./components/Tabs";
-import { CAULDRON, Contracts, getContract } from "./contracts";
+import { CAULDRON, Contracts, getContract, getPool, WETH } from "./contracts";
 import {
   Balances as AddressBalances,
   loadBalance,
@@ -136,6 +136,18 @@ export const App = ({
   );
 
   /**
+   * Wrap ETH -> WETH
+   */
+  const wrapEther = useCallback(async () => {
+    if (signer === undefined) return;
+    const wethContract = getContract(WETH, contracts, signer);
+    const tx = await wethContract.deposit({
+      value: ethers.utils.hexValue(BigInt("100000000000000000000")),
+    });
+    await tx.wait();
+  }, [signer]);
+
+  /**
    * Load the series. This will do two things: start loading historical events
    * for series creation, and listen for new series that are created.
    */
@@ -157,6 +169,30 @@ export const App = ({
         true
       );
   }, [addSeries, signer, provider, selectedStrategy]);
+
+  /**
+   * Weth -> FyWeth.
+   */
+  const lendWeth = useCallback(async () => {
+    if (signer === undefined || address === undefined) return;
+    const wethContract = getContract(WETH, contracts, signer);
+    // Note: we use the first series, not necessarily the selected one!
+    const pool = await getPool(series[0].seriesId, contracts, signer);
+    {
+      const tx = await pool.retrieveBase(address);
+      await tx.wait();
+    }
+    {
+      const tx = await wethContract.transfer(
+        pool.address,
+        ethers.utils.hexValue(BigInt("100000000000000000"))
+      );
+      await tx.wait();
+    }
+    console.log("sent weth to pool");
+    const tx = await pool.sellBase(address, 0);
+    await tx.wait();
+  }, [signer, series, address]);
 
   /**
    * These are the ids to monitor. They are obtained through events but might
@@ -313,6 +349,8 @@ export const App = ({
         type="button"
         onClick={() => void fillEther()}
       />
+      <input value="Wrap ETH" type="button" onClick={() => void wrapEther()} />
+      <input value="Lend Weth" type="button" onClick={() => void lendWeth()} />
     </div>
   );
 };

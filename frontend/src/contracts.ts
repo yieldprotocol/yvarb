@@ -19,6 +19,8 @@ import {
   WstEth__factory,
   FlashJoin,
   FlashJoin__factory,
+  Weth__factory,
+  Weth,
 } from "./contracts/YieldStEthLever.sol";
 
 export const CAULDRON = "0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867";
@@ -31,7 +33,7 @@ export const WETH_JOIN = "0x3bDb887Dc46ec0E964Df89fFE2980db0121f0fD0";
 
 type DefinitelyContracts = {
   [CAULDRON]: Cauldron;
-  [WETH]: IERC20;
+  [WETH]: Weth;
   [YIELD_ST_ETH_LEVER]: YieldStEthLever;
   [YIELD_LADLE]: YieldLadle;
   [WETH_ST_ETH_STABLESWAP]: IStableSwap;
@@ -56,7 +58,7 @@ export type ContractAddress = keyof DefinitelyContracts;
 
 const contractFactories: ContractFactories = {
   [CAULDRON]: Cauldron__factory,
-  [WETH]: IERC20__factory,
+  [WETH]: Weth__factory,
   [YIELD_ST_ETH_LEVER]: YieldStEthLever__factory,
   [YIELD_LADLE]: YieldLadle__factory,
   [WETH_ST_ETH_STABLESWAP]: IStableSwap__factory,
