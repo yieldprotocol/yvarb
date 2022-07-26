@@ -19,6 +19,9 @@ jobs:
         with:
           version: nightly
 
+      - name: Install Forge dependencies
+        run: forge install
+
       - name: Build contracts
         run: forge build
 
