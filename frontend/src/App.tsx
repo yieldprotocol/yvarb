@@ -11,7 +11,7 @@ import {
 } from "./objects/Vault";
 import { Vault as VaultComponent } from "./components/Vault";
 import { Tabs, TabsType } from "./components/Tabs";
-import { CAULDRON, Contracts, getContract, WETH } from "./contracts";
+import { CAULDRON, Contracts, getContract } from "./contracts";
 import {
   Balances as AddressBalances,
   loadBalance,
@@ -91,12 +91,20 @@ export const App = ({
 
   const fillEther = useCallback(async () => {
     try {
-      const tenderlyProvider = new ethers.providers.JsonRpcProvider('https://rpc.tenderly.co/fork/709e6131-c453-468d-9512-ab55a416516d');
-      const transactionParameters = [[address], ethers.utils.hexValue(BigInt('100000000000000000000'))];
-      const c = await tenderlyProvider?.send('tenderly_addBalance', transactionParameters);
-      console.log('Eth funded.' )
+      const tenderlyProvider = new ethers.providers.JsonRpcProvider(
+        "https://rpc.tenderly.co/fork/709e6131-c453-468d-9512-ab55a416516d"
+      );
+      const transactionParameters = [
+        [address],
+        ethers.utils.hexValue(BigInt("100000000000000000000")),
+      ];
+      await tenderlyProvider?.send(
+        "tenderly_addBalance",
+        transactionParameters
+      );
+      console.log("Eth funded.");
     } catch (e) {
-      console.log('Could not fill eth on tenderly fork');
+      console.log("Could not fill eth on tenderly fork");
     }
   }, [address]);
 
@@ -303,7 +311,7 @@ export const App = ({
       <input
         value="Fund Eth (Tenderly testing)"
         type="button"
-        onClick= {()=>fillEther()}
+        onClick={() => void fillEther()}
       />
     </div>
   );
