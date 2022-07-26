@@ -262,7 +262,7 @@ export const Invest = ({
 
       // Check balance
       console.log(balanceInput.toString(), balance.toString() )
-      if (balanceInput.gte(balance)) return ApprovalState.NotEnoughFunds;
+      if (balanceInput.gt(balance)) return ApprovalState.NotEnoughFunds;
 
       // Now check for approval
       const approval = await investToken.allowance(
