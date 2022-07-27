@@ -1,165 +1,215 @@
-import { BigNumber, utils } from "ethers";
-import React from "react";
-import { Contracts } from "../App";
+import { BigNumber, providers, Signer } from "ethers";
+import React, { useEffect, useState } from "react";
+import { MutableRefObject } from "react";
+import {
+  CAULDRON,
+  Contracts,
+  getContract,
+  getFyToken,
+  getPool,
+  WETH,
+  WETH_JOIN,
+  WETH_ST_ETH_STABLESWAP,
+  WST_ETH,
+  YIELD_ST_ETH_LEVER,
+} from "../contracts";
+import { Strategy } from "../objects/Strategy";
 import { Balance, Vault as VaultI } from "../objects/Vault";
-import Slippage, { addSlippage, SLIPPAGE_OPTIONS } from "./Slippage";
-import ValueDisplay, { ValueType } from "./ValueDisplay";
+import {
+  Slippage,
+  removeSlippage as subtractSlippage,
+  useSlippage,
+} from "./Slippage";
+import { ValueDisplay, ValueType } from "./ValueDisplay";
 import "./Vault.scss";
 
-interface State {
-  balance: Balance;
-  vault: VaultI;
-  slippage: number;
-  toBorrow?: BigNumber;
-}
-
 interface Properties {
+  /** The vaultId of the vault to show. */
   vaultId: string;
+  /** The result of calling `Cauldron.balances` for a vault. */
   balance: Balance;
   vault: VaultI;
-  label: string;
-  contracts: Readonly<Contracts>;
-  pollData(): Promise<void>;
+  contracts: MutableRefObject<Contracts>;
+  strategy: Strategy;
+  account: Signer;
+  provider: providers.Provider;
+  invalidateVaults: () => void;
 }
 
-export default class Vault extends React.Component<Properties, State> {
-  constructor(props: Properties) {
-    super(props);
-    this.state = {
-      ...props,
-      slippage: SLIPPAGE_OPTIONS[1].value,
-    };
-  }
+export const Vault = ({
+  strategy,
+  contracts,
+  account,
+  balance,
+  vault,
+  vaultId,
+  provider,
+  invalidateVaults,
+}: Properties) => {
+  /** The slippage will be subtracted from the expected final weth balance. */
+  const [slippage, setSlippage] = useSlippage();
 
-  render(): React.ReactNode {
-    return (
-      <div className="vault">
-        <ValueDisplay
-          label="Vault ID:"
-          value={this.props.vaultId}
-          valueType={ValueType.Literal}
-        />
-        <ValueDisplay
-          label="Collateral:"
-          valueType={ValueType.Usdc}
-          value={this.props.balance.ink}
-        />
-        <ValueDisplay
-          label="Debt:"
-          valueType={ValueType.Usdc}
-          value={this.props.balance.art}
-        />
-        <Slippage
-          value={this.state.slippage}
-          onChange={(s) => this.onSlippageChange(s)}
-        />
-        {this.state.toBorrow !== undefined ? (
-          <ValueDisplay
-            label="To borrow:"
-            valueType={ValueType.Usdc}
-            value={this.state.toBorrow}
-          />
-        ) : null}
-        <input
-          className="button"
-          value="Unwind"
-          type="button"
-          onClick={() => void this.unwind()}
-        />
-      </div>
-    );
-  }
-
-  componentDidMount() {
-    void this.updateToBorrow();
-  }
-
-  private onSlippageChange(slippage: number) {
-    this.setState({ slippage, toBorrow: undefined });
-    void this.updateToBorrow();
-  }
-
-  private async updateToBorrow() {
-    this.setState({ toBorrow: await this.computeToBorrow() });
-  }
-
-  private async computeToBorrow(): Promise<BigNumber> {
-    const balance = await this.props.contracts.cauldronContract.balances(
-      this.props.vaultId
-    );
-    if (balance.art.eq(0)) return BigNumber.from(0);
-    try {
-      console.log(
-        `Expected FY:\t${utils.formatUnits(
-          await this.props.contracts.poolContracts[
-            this.props.vault.seriesId
-          ].buyFYTokenPreview(balance.art),
-          6
-        )} USDC`
-      );
-      return addSlippage(
-        await this.props.contracts.poolContracts[
-          this.props.vault.seriesId
-        ].buyFYTokenPreview(balance.art),
-        this.state.slippage
-      );
-    } catch (e) {
-      // Past maturity
-      console.log("Past maturity?");
-      console.log(e);
-      return BigNumber.from(0);
+  /** How much weth we'll obtain, at a minimum. Includes slippage. */
+  const [finalWeth, setFinalWeth] = useState<BigNumber | undefined>();
+  useEffect(() => {
+    if (balance.ink.eq(0)) {
+      setFinalWeth(BigNumber.from(0));
+      return;
     }
-  }
 
-  private async unwind() {
-    const [poolAddress, balances] = await Promise.all([
-      this.props.contracts.ladleContract.pools(this.props.vault.seriesId),
-      this.props.contracts.cauldronContract.balances(this.props.vaultId),
-    ]);
-    // Sanity check
-    if (
-      this.props.balance.art.eq(balances.art) &&
-      this.props.balance.ink.eq(balances.ink)
-    ) {
-      while (this.state.toBorrow === undefined) {
-        await this.updateToBorrow();
-      }
-      const maxFy = this.state.toBorrow;
-      console.log(`Base required:\t${utils.formatUnits(maxFy, 6)} USDC`);
-      console.log(
-        this.props.vaultId,
-        maxFy,
-        poolAddress,
-        balances.ink,
-        balances.art,
-        this.props.vault.seriesId
+    let useResult = true;
+    /**
+     * Compute how much WEth the user has at the end of the operation.
+     */
+    const computeResultWeth = async () => {
+      const fyToken = await getFyToken(vault.seriesId, contracts, account);
+      const maturity = await fyToken.maturity();
+      const blockNumber = await provider.getBlockNumber();
+      const blockTime = (await provider.getBlock(blockNumber)).timestamp;
+      const wStEth = getContract(WST_ETH, contracts, account);
+      const stableSwap = getContract(
+        WETH_ST_ETH_STABLESWAP,
+        contracts,
+        account
       );
-      const gasLimit = (
-        await this.props.contracts.yieldLeverContract.estimateGas.unwind(
-          this.props.vaultId,
-          maxFy,
-          poolAddress,
-          balances.ink,
-          balances.art,
-          this.props.vault.seriesId
-        )
-      )
-        .mul(12)
-        .div(10)
-        .toNumber();
-      const tx = await this.props.contracts.yieldLeverContract.unwind(
-        this.props.vaultId,
-        maxFy,
-        poolAddress,
-        balances.ink,
-        balances.art,
-        this.props.vault.seriesId,
+      if (BigNumber.from(blockTime).lt(maturity)) {
+        // Repay!
+        // Basically rerun the entire process and see how much we end up with.
+        const stEthUnwrapped = await wStEth.getStETHByWstETH(balance.ink);
+        const wethReceived = await stableSwap.get_dy(1, 0, stEthUnwrapped);
+        const fee = await fyToken.flashFee(fyToken.address, balance.art);
+        const borrowAmountPlusFee = fee.add(balance.art);
+        const pool = await getPool(vault.seriesId, contracts, account);
+        const wethToTran = await pool.buyFYTokenPreview(borrowAmountPlusFee);
+        const wethRemaining = wethReceived.sub(wethToTran);
+        return wethRemaining;
+      } else {
+        // Past maturity, we close.
+        const cauldron = getContract(CAULDRON, contracts, account);
+        // `debtToBase` is not view, so we need to compute it ourselves
+        const base = await cauldron.callStatic.debtToBase(
+          vault.seriesId,
+          balance.art
+        );
+        const stEthUnwrapped = await wStEth.getStETHByWstETH(balance.ink);
+        const weth = await stableSwap.get_dy(1, 0, stEthUnwrapped);
+        const wethJoin = getContract(WETH_JOIN, contracts, account);
+        const fee = await wethJoin.flashFee(WETH, base);
+        return weth.sub(base).sub(fee);
+      }
+    };
+    setFinalWeth(undefined);
+    void computeResultWeth()
+      .then((val) => subtractSlippage(val, slippage))
+      .then((val) => {
+        if (useResult) setFinalWeth(val);
+      });
+    return () => {
+      useResult = false;
+    };
+  }, [
+    account,
+    provider,
+    balance,
+    contracts,
+    strategy,
+    vault.seriesId,
+    slippage,
+  ]);
+
+  /** The current value of the debt. */
+  const [currentDebt, setCurrentDebt] = useState<BigNumber | undefined>();
+  useEffect(() => {
+    let useResult = true;
+    const computeCurrentDebt = async (): Promise<BigNumber> => {
+      const pool = await getPool(vault.seriesId, contracts, account);
+      const art = await pool.sellFYTokenPreview(balance.art);
+      return art;
+    };
+    setCurrentDebt(undefined);
+    void computeCurrentDebt().then((debt) => {
+      if (useResult) setCurrentDebt(debt);
+    });
+    return () => {
+      useResult = false;
+    };
+  }, [balance.art, account, contracts, vault]);
+
+  /** Disable unwinding when loading or when empty. */
+  const unwindEnabled = finalWeth !== undefined && !balance.ink.eq(0);
+
+  const unwind = async () => {
+    if (finalWeth === undefined) return; // Not yet ready for unwinding
+    if (strategy.lever === YIELD_ST_ETH_LEVER) {
+      const lever = getContract(strategy.lever, contracts, account);
+      const gasLimit = await lever.estimateGas.divest(
+        vaultId,
+        vault.seriesId,
+        balance.ink,
+        balance.art,
+        finalWeth,
+      );
+      const tx = await lever.divest(
+        vaultId,
+        vault.seriesId,
+        balance.ink,
+        balance.art,
+        finalWeth,
         { gasLimit }
       );
       await tx.wait();
-
-      await tx.wait();
-      await Promise.all([this.props.pollData(), this.updateToBorrow()]);
+      invalidateVaults();
     }
-  }
-}
+  };
+
+  return (
+    <div className="vault">
+      <ValueDisplay
+        label="Vault ID:"
+        value={vaultId}
+        valueType={ValueType.Literal}
+      />
+      <ValueDisplay
+        label="Collateral:"
+        valueType={ValueType.Balance}
+        token={strategy.ilkId}
+        value={balance.ink}
+      />
+      {currentDebt === undefined ? null : (
+        <ValueDisplay
+          label="Current debt"
+          valueType={ValueType.Balance}
+          token={strategy.baseId}
+          value={currentDebt}
+        />
+      )}
+      <ValueDisplay
+        label="Debt at maturity:"
+        valueType={ValueType.Balance}
+        token={strategy.baseId}
+        value={balance.art}
+      />
+      <Slippage
+        value={slippage}
+        onChange={(s) => {
+          setSlippage(s);
+        }}
+      />
+      {finalWeth !== undefined ? (
+        <ValueDisplay
+          label="Final WETH:"
+          valueType={ValueType.Balance}
+          token={strategy.outToken[1]}
+          value={finalWeth}
+        />
+      ) : null}
+      <input
+        className="button"
+        value="Unwind"
+        type="button"
+        disabled={!unwindEnabled}
+        onClick={() => void unwind()}
+      />
+    </div>
+  );
+};

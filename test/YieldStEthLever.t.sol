@@ -8,7 +8,6 @@ import "erc3156/contracts/interfaces/IERC3156FlashLender.sol";
 import "@yield-protocol/vault-v2/FYToken.sol";
 import "@yield-protocol/utils-v2/contracts/token/IERC20.sol";
 import "@yield-protocol/utils-v2/contracts/access/AccessControl.sol";
-import "./Protocol.sol";
 import "@yield-protocol/vault-v2/utils/Giver.sol";
 import "@yield-protocol/vault-v2/FlashJoin.sol";
 import "@yield-protocol/vault-interfaces/src/ICauldron.sol";
@@ -18,7 +17,6 @@ abstract contract ZeroState is Test {
     address timeLock = 0x3b870db67a45611CF4723d44487EAF398fAc51E3;
     address fyTokenWhale = 0x1c15b746360BB8E792C6ED8cB83f272Ce1D170E0;
     YieldStEthLever lever;
-    Protocol protocol;
     Giver giver;
 
     IPool pool = IPool(0xc3348D8449d13C364479B1F114bcf5B73DFc0dc6);
@@ -35,7 +33,6 @@ abstract contract ZeroState is Test {
         IStableSwap(0x828b154032950C8ff7CF8085D841723Db2696056);
 
     constructor() {
-        protocol = new Protocol();
         fyToken = FYToken(0x53358d088d835399F1E97D2a01d79fC925c7D999);
         flashJoin = FlashJoin(0x3bDb887Dc46ec0E964Df89fFE2980db0121f0fD0); // weth
         cauldron = ICauldron(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867);
@@ -97,7 +94,9 @@ abstract contract VaultCreatedState is ZeroState {
 
     function setUp() public override {
         super.setUp();
-        vaultId = leverUp(2e18, 4e18);
+        // vaultId = lever(2e18, 4e18);
+        vaultId = invest(2e18, 4e18);
+
     }
 
     function unwind() internal returns (bytes12) {
@@ -115,7 +114,8 @@ abstract contract VaultCreatedState is ZeroState {
 
 contract ZeroStateTest is ZeroState {
     function testVault() public {
-        bytes12 vaultId = leverUp(2e18, 6e18);
+        // bytes12 vaultId = invest(2e18, 6e18);
+        bytes12 vaultId = invest(2e18, 5e18);
         DataTypes.Vault memory vault = cauldron.vaults(vaultId);
         assertEq(vault.owner, address(this));
 
@@ -127,7 +127,8 @@ contract ZeroStateTest is ZeroState {
     }
 
     function testLever() public {
-        bytes12 vaultId = leverUp(2e18, 5e18);
+        // bytes12 vaultId = invest(2e18, 5e18);
+        bytes12 vaultId = invest(2e18, 5e18);
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         assertEq(balances.art, 5e18);
 

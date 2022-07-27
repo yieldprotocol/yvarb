@@ -7,6 +7,8 @@ interface WstEth is IERC20 {
     function wrap(uint256 _stETHAmount) external returns (uint256);
 
     function unwrap(uint256 _wstETHAmount) external returns (uint256);
+    function getWstETHByStETH(uint256 _stETHAmount) external view returns (uint256);
+    function getStETHByWstETH(uint256 _wstEthAmount) external view returns (uint256);
 }
 
 /// @notice This contracts allows a user to 'lever up' via StEth. The concept
@@ -381,7 +383,7 @@ contract YieldStEthLever is YieldLeverBase {
 
         // Convert weth to FY to repay loan. We want `borrowAmountPlusFee`.
         IPool pool = IPool(ladle.pools(seriesId));
-        uint128 wethSpent = pool.buyFYTokenPreview(borrowAmountPlusFee);
+        uint128 wethToTran = pool.buyFYTokenPreview(borrowAmountPlusFee);
         weth.safeTransfer(address(pool), wethToTran);
         pool.buyFYToken(address(this), borrowAmountPlusFee, wethToTran);
 
