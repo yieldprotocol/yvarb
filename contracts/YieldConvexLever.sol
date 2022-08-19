@@ -72,7 +72,7 @@ contract YieldConvexLever is YieldLeverBase {
         IFYToken tempFyToken = pool.fyToken();
         tempFyToken.safeTransfer(address(pool), borrowAmount);
         uint128 totalToInvest = baseAmount +
-            uint128(pool.sellFYToken(address(this), 0));
+            uint128(pool.sellFYToken(address(this), 0));// Sell fyToken to get USDC/DAI
 
         // Deposit in curve pool to get 3CRV
         uint256[] memory amounts = new uint256[](3);
@@ -84,6 +84,7 @@ contract YieldConvexLever is YieldLeverBase {
         if (underlying == USDC) amounts[1] = totalToInvest - baseAmount;
         else if (underlying == DAI) amounts[0] = totalToInvest - baseAmount;
         else revert();
+        // deposit USDC/DAI to receive 3CRV
         (bool success, bytes memory data) = address(threecrvPool).call(
             abi.encodeWithSignature(
                 "add_liquidity(uint256[3],uint256)",
@@ -92,7 +93,7 @@ contract YieldConvexLever is YieldLeverBase {
             )
         );
         // threecrvPool.add_liquidity(amounts, 0); //TODO: Figure out what should be 0 & how to use this & not the call function
-        // Deposit in convex to get cvx3CRV
+        // Deposit 3CRV in convex to get cvx3CRV
         convexDeposit.depositAll(9, false); // 9 is the pool ID
         // POUR to get fyToken back & repay the flash loan
         _pour(ilkId, vaultId, borrowAmount, fee);
@@ -141,6 +142,7 @@ contract YieldConvexLever is YieldLeverBase {
         convexDeposit.withdraw(9, IERC20(CVX3CRV).balanceOf(address(this)));
 
         IPool pool = IPool(LADLE.pools(seriesId));
+        // Remove USDC/DAI liquidity from 3crv pool
         if (address(pool.base()) == USDC)
             threecrvPool.remove_liquidity_one_coin(
                 IERC20(THREECRV).balanceOf(address(this)),
@@ -187,6 +189,7 @@ contract YieldConvexLever is YieldLeverBase {
         //         0
         //     );
         // else if (pool.base() == DAI)
+        // Remove USDC/DAI liquidity from 3crv pool
         threecrvPool.remove_liquidity_one_coin(
             IERC20(THREECRV).balanceOf(address(this)),
             0,
