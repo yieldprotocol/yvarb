@@ -54,7 +54,7 @@ contract YieldConvexLever is YieldLeverBase {
     /// @param ilkId The id of the ilk being borrowed.
     /// @param seriesId The pool (and thereby series) to borrow from.
     /// @param vaultId The vault id to put collateral into and borrow from.
-    /// @param borrowAmount The amount of FYWeth borrowed in the flash loan.
+    /// @param borrowAmount The amount of FYTOKEN borrowed in the flash loan.
     /// @param fee The fee that will be issued by the flash loan.
     /// @param baseAmount The amount of own collateral to supply.
     function borrow(
@@ -167,8 +167,7 @@ contract YieldConvexLever is YieldLeverBase {
     /// @param ilkId The id of the ilk.
     /// @param vaultId The ID of the vault to close.
     /// @param ink The collateral to take from the vault.
-    /// @param art The debt to repay. This is denominated in fyTokens, even
-    ///     though the payment is done in terms of WEth.
+    /// @param art The debt to repay. This is denominated in fyTokens
     function close(
         bytes6 ilkId,
         bytes12 vaultId,
