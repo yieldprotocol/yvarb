@@ -113,14 +113,18 @@ contract YieldStrategyLever is YieldLeverBase {
         strategies[ilkId].burn(address(pool));
 
         // Burn LP to get base & fyToken
-        (, uint256 bases, ) = pool.burn(
+        (, uint256 bases, uint256 fyTokens) = pool.burn(
             address(pool),
             address(this),
             0,
             type(uint256).max
         );
         // buyFyToken
-        pool.buyFYToken(address(this), borrowAmountPlusFee, uint128(bases));
+        pool.buyFYToken(
+            address(this),
+            borrowAmountPlusFee - uint128(fyTokens),
+            uint128(bases)
+        );
     }
 
     /// @notice Close a vault after maturity.
@@ -138,7 +142,9 @@ contract YieldStrategyLever is YieldLeverBase {
         IPool pool = strategy.pool();
 
         LADLE.close(vaultId, address(strategy), -int128(ink), -int128(art));
+        // Burn Strategy Tokens and send LP token to the pool
         strategy.burn(address(pool));
+        // Burn LP token to obtain base to repay the flash loan
         pool.burnForBase(address(this), 0, type(uint256).max);
     }
 }

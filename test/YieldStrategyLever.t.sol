@@ -17,9 +17,9 @@ import "@yield-protocol/vault-interfaces/src/ILadle.sol";
 abstract contract ZeroState is Test {
     address timeLock = 0x3b870db67a45611CF4723d44487EAF398fAc51E3;
     address daiWhale = 0x5D38B4e4783E34e2301A2a36c39a03c45798C4dD;
-    address cvx3CrvWhale = 0x232c412D3613D5915fc1eBF6eb8D14f11b6a260D;
+    address strategyTokenWhale = 0x232c412D3613D5915fc1eBF6eb8D14f11b6a260D;
     IERC20 constant DAI = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    IERC20 constant CVX3CRV =
+    IERC20 constant STRATEGYTOKEN =
         IERC20(0x7ACFe277dEd15CabA6a8Da2972b1eb93fe1e2cCD);
 
     Protocol protocol;
@@ -56,8 +56,8 @@ abstract contract ZeroState is Test {
 
         vm.prank(daiWhale);
         DAI.transfer(address(this), 100000e18);
-        vm.prank(cvx3CrvWhale);
-        CVX3CRV.transfer(address(this), 10000e18);
+        vm.prank(strategyTokenWhale);
+        STRATEGYTOKEN.transfer(address(this), 10000e18);
 
         vm.prank(timeLock);
         wethJoin.setFlashFeeFactor(1);
@@ -78,7 +78,7 @@ abstract contract ZeroState is Test {
         lever = new YieldStrategyLever(giver);
 
         DAI.approve(address(lever), type(uint256).max);
-        CVX3CRV.approve(address(lever), type(uint256).max);
+        STRATEGYTOKEN.approve(address(lever), type(uint256).max);
 
         AccessControl giverAccessControl = AccessControl(address(giver));
         giverAccessControl.grantRole(0xe4fd9dc5, timeLock);
@@ -86,7 +86,7 @@ abstract contract ZeroState is Test {
 
         lever.approveFyToken(seriesId);
 
-        lever.setStrategy(strategyIlkId,IStrategy(address(CVX3CRV)));
+        lever.setStrategy(strategyIlkId, IStrategy(address(STRATEGYTOKEN)));
     }
 
     /// @notice Create a vault.
@@ -155,6 +155,12 @@ contract UnwindTest is ZeroState {
             balances.art,
             0
         );
+
+        assertEq(IERC20(DAI).balanceOf(address(lever)), 0);
+        assertEq(
+            IPool(ladle.pools(seriesId)).fyToken().balanceOf(address(lever)),
+            0
+        );
     }
 
     function testDoClose() public {
@@ -167,6 +173,11 @@ contract UnwindTest is ZeroState {
             seriesId,
             balances.ink,
             balances.art,
+            0
+        );
+        assertEq(IERC20(DAI).balanceOf(address(lever)), 0);
+        assertEq(
+            IPool(ladle.pools(seriesId)).fyToken().balanceOf(address(lever)),
             0
         );
     }
