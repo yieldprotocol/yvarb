@@ -133,7 +133,6 @@ contract ZeroStateTest is ZeroState {
             IPool(ladle.pools(seriesId)).fyToken().balanceOf(address(lever)),
             0
         );
-        // assertEq(IPool(ladle.pools(strategyIlkId)).base().balanceOf(address(lever)), 0);
     }
 }
 

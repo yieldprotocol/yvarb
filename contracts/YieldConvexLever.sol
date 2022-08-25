@@ -18,7 +18,6 @@ interface IConvexPool {
 
 interface IConvexJoin {
     function addVault(bytes12 vaultId) external;
-
     function removeVault(bytes12 vaultId, address account) external;
 }
 

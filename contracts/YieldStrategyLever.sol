@@ -58,14 +58,19 @@ contract YieldStrategyLever is YieldLeverBase {
         // We have borrowed FyTokens, so sell those
         IPool pool = IPool(LADLE.pools(seriesId));
         IFYToken tempFyToken = pool.fyToken();
-        tempFyToken.safeTransfer(address(pool), borrowAmount);
+        tempFyToken.safeTransfer(address(pool), borrowAmount - fee);
         uint256 baseReceived = pool.sellFYToken(address(pool), 0); // Sell fyToken to get USDC/DAI/ETH
-
+        pool.base().transfer(
+            address(pool),
+            pool.base().balanceOf(address(this))
+        );
         // Mint LP token & deposit to strategy
         pool.mintWithBase(
             address(strategies[ilkId]),
             msg.sender,
-            uint256(pool.buyFYTokenPreview(uint128(baseReceived / 3))), // TODO: what should be the fyTokenToBuy
+            uint256(
+                pool.buyFYTokenPreview(uint128((baseReceived + baseAmount) / 3))
+            ), // TODO: what should be the fyTokenToBuy
             0,
             type(uint256).max
         );
@@ -79,8 +84,8 @@ contract YieldStrategyLever is YieldLeverBase {
         LADLE.pour(
             vaultId,
             address(this),
-            int128(uint128(tokensMinted + baseAmount)),
-            int128(uint128(borrowAmount + fee))
+            int128(uint128(tokensMinted)),
+            int128(uint128(borrowAmount))
         );
     }
 
