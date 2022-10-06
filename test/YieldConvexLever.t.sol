@@ -17,8 +17,10 @@ import "@yield-protocol/vault-interfaces/src/ILadle.sol";
 abstract contract ZeroState is Test {
     address timeLock = 0x3b870db67a45611CF4723d44487EAF398fAc51E3;
     address daiWhale = 0x5D38B4e4783E34e2301A2a36c39a03c45798C4dD;
+    address usdcWhale = 0x5D38B4e4783E34e2301A2a36c39a03c45798C4dD;
     address cvx3CrvWhale = 0x689440f2Ff927E1f24c72F1087E1FAF471eCe1c8;
     IERC20 constant DAI = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
+    IERC20 constant USDC = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
     IERC20 constant CVX3CRV =
         IERC20(0x30D9410ED1D5DA1F6C8391af5338C93ab8d4035C);
 
@@ -78,6 +80,7 @@ abstract contract ZeroState is Test {
         lever = new YieldConvexLever(giver);
 
         DAI.approve(address(lever), type(uint256).max);
+        USDC.approve(address(lever), type(uint256).max);
         CVX3CRV.approve(address(lever), type(uint256).max);
 
         AccessControl giverAccessControl = AccessControl(address(giver));
@@ -92,8 +95,6 @@ abstract contract ZeroState is Test {
         public
         returns (bytes12 vaultId)
     {
-        // Expect at least 80% of the value to end up as collateral
-        // uint256 eulerAmount = pool.sellFYTokenPreview(baseAmount + borrowAmount);
         vaultId = lever.invest(
             cvx3CrvIlkId, // ilkId edai
             seriesId,
@@ -118,7 +119,7 @@ abstract contract ZeroState is Test {
 contract ZeroStateTest is ZeroState {
     function testVault() public {
         uint256 availableAtStart = availableBalance(cvx3CrvIlkId);
-        bytes12 vaultId = leverUp(2000e18, 5000e18);
+        bytes12 vaultId = leverUp(9000e18, 5000e18);
         DataTypes.Vault memory vault = cauldron.vaults(vaultId);
         assertEq(vault.owner, address(this));
 
@@ -126,7 +127,7 @@ contract ZeroStateTest is ZeroState {
         assertEq(availableBalance(cvx3CrvIlkId), availableAtStart);
 
         // Assert that the balances are empty
-        assertEq(IERC20(DAI).balanceOf(address(lever)), 0);
+        assertEq(IERC20(USDC).balanceOf(address(lever)), 0);
         assertEq(
             IPool(ladle.pools(seriesId)).fyToken().balanceOf(address(lever)),
             0

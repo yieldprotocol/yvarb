@@ -18,6 +18,7 @@ interface IConvexPool {
 
 interface IConvexJoin {
     function addVault(bytes12 vaultId) external;
+
     function removeVault(bytes12 vaultId, address account) external;
 }
 
@@ -49,6 +50,43 @@ contract YieldConvexLever is YieldLeverBase {
         IERC20(CVX3CRV).approve(address(convexDeposit), type(uint256).max);
     }
 
+    /// @notice Invest by creating a levered vault. The basic structure is
+    ///     always the same. We borrow FyToken for the series and convert it to
+    ///     the yield-bearing token that is used as collateral.
+    /// @param ilkId The ilkId to invest in. This is often a yield-bearing
+    ///     token, for example 0x303400000000 (WStEth).
+    /// @param seriesId The series to invest in. This series doesn't usually
+    ///     have the ilkId as base, but the asset the yield bearing token is
+    ///     based on. For example: 0x303030370000 (WEth) instead of WStEth.
+    /// @param amountToInvest The amount of the base to invest. This is denoted
+    ///     in terms of the base asset: USDC, DAI, etc.
+    /// @param borrowAmount The amount to borrow. This is denoted in terms of
+    ///     debt at maturity (and will thus be less before maturity).
+    /// @param minCollateral Used for countering slippage. This is the minimum
+    ///     amount of collateral that should be locked. The debt is always
+    ///     equal to the borrowAmount plus flash loan fees.
+    function invest(
+        bytes6 ilkId,
+        bytes6 seriesId,
+        uint128 amountToInvest,
+        uint128 borrowAmount,
+        uint128 minCollateral
+    ) external override returns (bytes12 vaultId) {
+        IERC20(CAULDRON.assets(ilkId)).safeTransferFrom(
+            msg.sender,
+            address(this),
+            amountToInvest
+        );
+        return
+            _invest(
+                ilkId,
+                seriesId,
+                amountToInvest,
+                borrowAmount,
+                minCollateral
+            );
+    }
+
     /// @notice This function is called from within the flash loan.
     /// @param ilkId The id of the ilk being borrowed.
     /// @param seriesId The pool (and thereby series) to borrow from.
@@ -71,7 +109,7 @@ contract YieldConvexLever is YieldLeverBase {
         IFYToken tempFyToken = pool.fyToken();
         tempFyToken.safeTransfer(address(pool), borrowAmount);
         uint128 totalToInvest = baseAmount +
-            uint128(pool.sellFYToken(address(this), 0));// Sell fyToken to get USDC/DAI
+            uint128(pool.sellFYToken(address(this), 0)); // Sell fyToken to get USDC/DAI
 
         // Deposit in curve pool to get 3CRV
         uint256[] memory amounts = new uint256[](3);
@@ -80,17 +118,31 @@ contract YieldConvexLever is YieldLeverBase {
         // amounts[2] = 0;
         address underlying = tempFyToken.underlying();
 
-        if (underlying == USDC) amounts[1] = totalToInvest - baseAmount;
-        else if (underlying == DAI) amounts[0] = totalToInvest - baseAmount;
-        else revert();
+        if (underlying == USDC) {
+            (bool success, ) = address(threecrvPool).call(
+                abi.encodeWithSignature(
+                    "add_liquidity(uint256[3],uint256)",
+                    [0, totalToInvest - baseAmount, 0], //TODO: pass it correctly & not hardcode
+                    0
+                )
+            );
+        } else if (underlying == DAI) {
+            (bool success, ) = address(threecrvPool).call(
+                abi.encodeWithSignature(
+                    "add_liquidity(uint256[3],uint256)",
+                    [totalToInvest - baseAmount, 0, 0], //TODO: pass it correctly & not hardcode
+                    0
+                )
+            );
+        } else revert();
         // deposit USDC/DAI to receive 3CRV
-        (bool success, bytes memory data) = address(threecrvPool).call(
-            abi.encodeWithSignature(
-                "add_liquidity(uint256[3],uint256)",
-                [totalToInvest - baseAmount, 0, 0], //TODO: pass it correctly & not hardcode
-                0
-            )
-        );
+        // (bool success, ) = address(threecrvPool).call(
+        //     abi.encodeWithSignature(
+        //         "add_liquidity(uint256[3],uint256)",
+        //         [totalToInvest - baseAmount, 0, 0], //TODO: pass it correctly & not hardcode
+        //         0
+        //     )
+        // );
         // threecrvPool.add_liquidity(amounts, 0); //TODO: Figure out what should be 0 & how to use this & not the call function
         // Deposit 3CRV in convex to get cvx3CRV
         convexDeposit.depositAll(9, false); // 9 is the pool ID
@@ -173,26 +225,25 @@ contract YieldConvexLever is YieldLeverBase {
         uint128 ink,
         uint128 art
     ) internal override {
-        // IPool pool = IPool(LADLE.pools(seriesId));
         LADLE.close(vaultId, address(this), -int128(ink), -int128(art));
         // Unstake from convex to get 3crv
         convexDeposit.withdraw(9, IERC20(CVX3CRV).balanceOf(address(this)));
-
-        //TODO: how to identify base??
+        DataTypes.Vault memory vault = CAULDRON.vaults(vaultId);
+        IPool pool = IPool(LADLE.pools(vault.seriesId));
         // Unstake on curve to get ilkId
-        // if (pool.base() == USDC)
-        //     threecrvPool.remove_liquidity_one_coin(
-        //         IERC20(THREECRV).balanceOf(address(this)),
-        //         1,
-        //         0
-        //     );
-        // else if (pool.base() == DAI)
-        // Remove USDC/DAI liquidity from 3crv pool
-        threecrvPool.remove_liquidity_one_coin(
-            IERC20(THREECRV).balanceOf(address(this)),
-            0,
-            0
-        );
-        // else revert();
+        if (address(pool.base()) == USDC)
+            threecrvPool.remove_liquidity_one_coin(
+                IERC20(THREECRV).balanceOf(address(this)),
+                1,
+                0
+            );
+        else if (address(pool.base()) == DAI)
+            // Remove USDC/DAI liquidity from 3crv pool
+            threecrvPool.remove_liquidity_one_coin(
+                IERC20(THREECRV).balanceOf(address(this)),
+                0,
+                0
+            );
+        else revert();
     }
 }

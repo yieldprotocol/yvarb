@@ -155,7 +155,7 @@ abstract contract YieldLeverBase is IERC3156FlashBorrower {
         uint128 amountToInvest,
         uint128 borrowAmount,
         uint128 minCollateral
-    ) external returns (bytes12 vaultId) {
+    ) external virtual returns (bytes12 vaultId) {
         IPool(LADLE.pools(seriesId)).base().safeTransferFrom(
             msg.sender,
             address(this),
