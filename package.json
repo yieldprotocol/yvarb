@@ -13,7 +13,8 @@
 	},
 	"author": "Yield Inc.",
 	"files": [
-		"contracts/*sol"
+		"contracts/*sol",
+		"contracts/interfaces/*sol"
 	],
 	"bugs": {
 		"url": "https://github.com/yieldprotocol/yvarb/issues"
