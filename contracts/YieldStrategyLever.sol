@@ -46,7 +46,7 @@ error OnlyRepayOrClose();
 //          ii. Burn Strategy Tokens and send LP token to the pool
 //          iii. Burn LP token to obtain base to repay the flash loan, redeem the fyToken
 /// @notice For leveringup we could flash borrow base instead of fyToken as well
-/// @author iamsahu
+/// @author iamsahu & alcueca
 contract YieldStrategyLever is IERC3156FlashBorrower {
     using TransferHelper for IERC20;
     using TransferHelper for IFYToken;
