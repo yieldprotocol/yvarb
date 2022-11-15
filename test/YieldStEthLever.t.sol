@@ -22,9 +22,9 @@ abstract contract ZeroState is Test {
     Protocol protocol;
     Giver giver;
 
-    IPool pool = IPool(0xc3348D8449d13C364479B1F114bcf5B73DFc0dc6);
+    IPool pool = IPool(0x9D34dF69958675450ab8E53c8Df5531203398Dc9);
     FlashJoin flashJoin;
-    bytes6 seriesId = 0x303030370000;
+    bytes6 seriesId = 0x303030380000;
     ICauldron cauldron;
 
     IERC20 constant weth = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
@@ -44,7 +44,7 @@ abstract contract ZeroState is Test {
 
     constructor() {
         protocol = new Protocol();
-        fyToken = FYToken(0x53358d088d835399F1E97D2a01d79fC925c7D999);
+        fyToken = FYToken(0x386a0A72FfEeB773381267D69B61aCd1572e074D);
         flashJoin = FlashJoin(0x3bDb887Dc46ec0E964Df89fFE2980db0121f0fD0); // weth
         cauldron = ICauldron(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867);
 
@@ -71,8 +71,8 @@ abstract contract ZeroState is Test {
         //Label
         vm.label(address(lever), "YieldLever");
 
-        vm.prank(fyTokenWhale);
-        fyToken.transfer(address(this), 2e18);
+        // vm.prank(fyTokenWhale);
+        // fyToken.transfer(address(this), 2e18);
 
         vm.prank(ethWhale);
         address(this).call{value: 1e18}("");
@@ -256,17 +256,17 @@ contract VaultCreatedStateTest is VaultCreatedState {
         assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
     }
 
-    function testRepayRevertOnSlippage() public {
-        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+    // function testRepayRevertOnSlippage() public {
+    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
 
-        // Rough calculation of the minimal amount of weth that we want back.
-        // In reality, the debt is not in weth but in fyWeth.
-        uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
-        uint256 minweth = (collateralValueWeth - balances.art) * 2;
+    //     // Rough calculation of the minimal amount of weth that we want back.
+    //     // In reality, the debt is not in weth but in fyWeth.
+    //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
+    //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
 
-        vm.expectRevert(SlippageFailure.selector);
-        lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
-    }
+    //     vm.expectRevert(SlippageFailure.selector);
+    //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
+    // }
 
     function testCloseRevertOnSlippage() public {
         DataTypes.Series memory series_ = cauldron.series(seriesId);
