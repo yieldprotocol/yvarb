@@ -17,6 +17,9 @@ import "@yield-protocol/utils-v2/contracts/cast/CastU256U128.sol";
 
 error FlashLoanFailure();
 error SlippageFailure();
+error OnlyBorrow();
+error OnlyRedeem();
+error OnlyRepayOrClose();
 
 contract YieldLeverBase is IERC3156FlashBorrower {
     /// @notice The Yield Ladle, the primary entry point for most high-level
@@ -27,6 +30,8 @@ contract YieldLeverBase is IERC3156FlashBorrower {
     ICauldron public constant cauldron =
         ICauldron(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867);
 
+    bytes6 constant ASSET_ID_MASK = 0xFFFF00000000;
+    
     /// @notice The operation to execute in the flash loan.
     enum Operation {
         BORROW,
