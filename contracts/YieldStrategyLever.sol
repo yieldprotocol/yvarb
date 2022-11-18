@@ -9,10 +9,10 @@ import "@yield-protocol/utils-v2/contracts/cast/CastU128I128.sol";
 import "@yield-protocol/utils-v2/contracts/cast/CastU256U128.sol";
 import "@yield-protocol/utils-v2/contracts/token/IERC20.sol";
 import "@yield-protocol/utils-v2/contracts/token/TransferHelper.sol";
-import "@yield-protocol/vault-v2/interfaces/ICauldron.sol";
-import "@yield-protocol/vault-v2/interfaces/ILadle.sol";
-import "@yield-protocol/vault-v2/interfaces/IFYToken.sol";
-import "@yield-protocol/vault-v2/utils/Giver.sol";
+import "@yield-protocol/vault-v2/contracts/interfaces/ICauldron.sol";
+import "@yield-protocol/vault-v2/contracts/interfaces/ILadle.sol";
+import "@yield-protocol/vault-v2/contracts/interfaces/IFYToken.sol";
+import "@yield-protocol/vault-v2/contracts/utils/Giver.sol";
 
 error FlashLoanFailure();
 error SlippageFailure();
@@ -46,7 +46,7 @@ error OnlyRepayOrClose();
 //          ii. Burn Strategy Tokens and send LP token to the pool
 //          iii. Burn LP token to obtain base to repay the flash loan, redeem the fyToken
 /// @notice For leveringup we could flash borrow base instead of fyToken as well
-/// @author iamsahu
+/// @author iamsahu & alcueca
 contract YieldStrategyLever is IERC3156FlashBorrower {
     using TransferHelper for IERC20;
     using TransferHelper for IFYToken;
