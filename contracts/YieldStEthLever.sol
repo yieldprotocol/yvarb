@@ -4,6 +4,7 @@ import "./YieldLeverBase.sol";
 import "./interfaces/IStableSwap.sol";
 import "@yield-protocol/utils-v2/contracts/interfaces/IWETH9.sol";
 import "@yield-protocol/yieldspace-tv/src/interfaces/IMaturingToken.sol";
+
 interface WstEth is IERC20 {
     function wrap(uint256 _stETHAmount) external returns (uint256);
 
@@ -125,6 +126,137 @@ contract YieldStEthLever is YieldLeverBase {
             IERC20(address(fyToken)).balanceOf(address(this)) == 0,
             "FYToken remains"
         );
+
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+
+        emit Invested(
+            vaultId,
+            seriesId,
+            msg.sender,
+            balances.ink,
+            balances.art
+        );
+    }
+
+    /// @notice Divest a position.
+    ///
+    ///     If pre maturity, borrow liquidity tokens to repay `art` debt and
+    ///     take `ink` collateral. Repay the loan and return remaining
+    ///     collateral as WEth.
+    ///
+    ///     If post maturity, borrow WEth to pay off the debt directly. Convert
+    ///     the WStEth collateral to WEth and return excess to user.
+    ///
+    ///     This function will take the vault from you using `Giver`, so make
+    ///     sure you have given it permission to do that.
+    /// @param vaultId The vault to use.
+    /// @param seriesId The seriesId corresponding to the vault.
+    /// @param ink The amount of collateral to recover.
+    /// @param art The debt to repay.
+    /// @param minWeth Revert the transaction if we don't obtain at least this
+    ///     much WEth at the end of the operation.
+    /// @dev It is more gas efficient to let the user supply the `seriesId`,
+    ///     but it should match the pool.
+    function divest(
+        bytes12 vaultId,
+        bytes6 seriesId,
+        uint256 ink,
+        uint256 art,
+        uint256 minWeth
+    ) external {
+        // Test that the caller is the owner of the vault.
+        // This is important as we will take the vault from the user.
+        require(cauldron.vaults(vaultId).owner == msg.sender);
+
+        // Give the vault to the contract
+        giver.seize(vaultId, address(this));
+
+        // Check if we're pre or post maturity.
+        if (uint32(block.timestamp) < cauldron.series(seriesId).maturity) {
+            IPool pool = IPool(ladle.pools(seriesId));
+            IMaturingToken fyToken = pool.fyToken();
+            // Repay:
+            // Series is not past maturity.
+            // Borrow to repay debt, move directly to the pool.
+            bytes memory data = bytes.concat(
+                bytes1(bytes1(uint8(uint256(Operation.REPAY)))), // [0:1]
+                seriesId, // [1:7]
+                vaultId, // [7:19]
+                bytes32(ink), // [19:51]
+                bytes32(art), // [51:83]
+                bytes20(msg.sender), // [83:103]
+                bytes32(minWeth) // [103:135]
+            );
+            bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
+                this, // Loan Receiver
+                address(fyToken), // Loan Token
+                art, // Loan Amount: borrow exactly the debt to repay.
+                data
+            );
+            if (!success) revert FlashLoanFailure();
+
+            // We have borrowed exactly enough for the debt and bought back
+            // exactly enough for the loan + fee, so there is no balance of
+            // FYToken left. Check:
+            require(IERC20(address(fyToken)).balanceOf(address(this)) == 0);
+            emit Divested(
+                Operation.REPAY,
+                vaultId,
+                seriesId,
+                msg.sender,
+                ink,
+                art
+            );
+        } else {
+            uint256 availableWeth = weth.balanceOf(address(wethJoin)) -
+                wethJoin.storedBalance();
+
+            // Close:
+            // Series is past maturity, borrow and move directly to collateral pool.
+            bytes memory data = bytes.concat(
+                bytes1(bytes1(uint8(uint256(Operation.CLOSE)))), // [0:1]
+                seriesId, // [1:7]
+                vaultId, // [7:19]
+                bytes32(ink), // [19:51]
+                bytes32(art) // [51:83]
+            );
+            // We have a debt in terms of fyWEth, but should pay back in WEth.
+            // `base` is how much WEth we should pay back.
+            uint128 base = cauldron.debtToBase(seriesId, art.u128());
+            bool success = wethJoin.flashLoan(
+                this, // Loan Receiver
+                address(weth), // Loan Token
+                base, // Loan Amount
+                data
+            );
+            if (!success) revert FlashLoanFailure();
+
+            // At this point, we have only Weth left. Hopefully: this comes
+            // from the collateral in our vault!
+
+            // There is however one caveat. If there was Weth in the join to
+            // begin with, this will be billed first. Since we want to return
+            // the join to the starting state, we should deposit Weth back.
+            uint256 wethToDeposit = availableWeth -
+                (weth.balanceOf(address(wethJoin)) - wethJoin.storedBalance());
+            weth.safeTransfer(address(wethJoin), wethToDeposit);
+
+            uint256 wethBalance = weth.balanceOf(address(this));
+            if (wethBalance < minWeth) revert SlippageFailure();
+            // Transferring the leftover to the user
+            IERC20(weth).safeTransfer(msg.sender, wethBalance);
+            emit Divested(
+                Operation.CLOSE,
+                vaultId,
+                seriesId,
+                msg.sender,
+                ink,
+                art
+            );
+        }
+
+        // Give the vault back to the sender, just in case there is anything left
+        giver.give(vaultId, msg.sender);
     }
 
     /// @notice Called by a flash lender, which can be `wstethJoin` or
@@ -156,7 +288,6 @@ contract YieldStEthLever is YieldLeverBase {
             revert FlashLoanFailure();
         // We trust the lender, so now we can check that we were the initiator.
         if (initiator != address(this)) revert FlashLoanFailure();
-
         // Decode the operation to execute and then call that function.
         if (status == Operation.BORROW) {
             uint128 baseAmount = uint128(bytes16(data[19:35]));
@@ -247,111 +378,6 @@ contract YieldStEthLever is YieldLeverBase {
 
         // At the end, the flash loan will take exactly `borrowedAmount + fee`,
         // so the final balance should be exactly 0.
-    }
-
-    /// @notice Divest a position.
-    ///
-    ///     If pre maturity, borrow liquidity tokens to repay `art` debt and
-    ///     take `ink` collateral. Repay the loan and return remaining
-    ///     collateral as WEth.
-    ///
-    ///     If post maturity, borrow WEth to pay off the debt directly. Convert
-    ///     the WStEth collateral to WEth and return excess to user.
-    ///
-    ///     This function will take the vault from you using `Giver`, so make
-    ///     sure you have given it permission to do that.
-    /// @param vaultId The vault to use.
-    /// @param seriesId The seriesId corresponding to the vault.
-    /// @param ink The amount of collateral to recover.
-    /// @param art The debt to repay.
-    /// @param minWeth Revert the transaction if we don't obtain at least this
-    ///     much WEth at the end of the operation.
-    /// @dev It is more gas efficient to let the user supply the `seriesId`,
-    ///     but it should match the pool.
-    function divest(
-        bytes12 vaultId,
-        bytes6 seriesId,
-        uint256 ink,
-        uint256 art,
-        uint256 minWeth
-    ) external {
-        // Test that the caller is the owner of the vault.
-        // This is important as we will take the vault from the user.
-        require(cauldron.vaults(vaultId).owner == msg.sender);
-
-        // Give the vault to the contract
-        giver.seize(vaultId, address(this));
-
-        // Check if we're pre or post maturity.
-        if (uint32(block.timestamp) < cauldron.series(seriesId).maturity) {
-            IPool pool = IPool(ladle.pools(seriesId));
-            IMaturingToken fyToken = pool.fyToken();
-            // Repay:
-            // Series is not past maturity.
-            // Borrow to repay debt, move directly to the pool.
-            bytes memory data = bytes.concat(
-                bytes1(bytes1(uint8(uint256(Operation.REPAY)))), // [0:1]
-                seriesId, // [1:7]
-                vaultId, // [7:19]
-                bytes32(ink), // [19:51]
-                bytes32(art), // [51:83]
-                bytes20(msg.sender), // [83:103]
-                bytes32(minWeth) // [103:135]
-            );
-            bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
-                this, // Loan Receiver
-                address(fyToken), // Loan Token
-                art, // Loan Amount: borrow exactly the debt to repay.
-                data
-            );
-            if (!success) revert FlashLoanFailure();
-
-            // We have borrowed exactly enough for the debt and bought back
-            // exactly enough for the loan + fee, so there is no balance of
-            // FYToken left. Check:
-            require(IERC20(address(fyToken)).balanceOf(address(this)) == 0);
-        } else {
-            uint256 availableWeth = weth.balanceOf(address(wethJoin)) -
-                wethJoin.storedBalance();
-
-            // Close:
-            // Series is past maturity, borrow and move directly to collateral pool.
-            bytes memory data = bytes.concat(
-                bytes1(bytes1(uint8(uint256(Operation.CLOSE)))), // [0:1]
-                seriesId, // [1:7]
-                vaultId, // [7:19]
-                bytes32(ink), // [19:51]
-                bytes32(art) // [51:83]
-            );
-            // We have a debt in terms of fyWEth, but should pay back in WEth.
-            // `base` is how much WEth we should pay back.
-            uint128 base = cauldron.debtToBase(seriesId, art.u128());
-            bool success = wethJoin.flashLoan(
-                this, // Loan Receiver
-                address(weth), // Loan Token
-                base, // Loan Amount
-                data
-            );
-            if (!success) revert FlashLoanFailure();
-
-            // At this point, we have only Weth left. Hopefully: this comes
-            // from the collateral in our vault!
-
-            // There is however one caveat. If there was Weth in the join to
-            // begin with, this will be billed first. Since we want to return
-            // the join to the starting state, we should deposit Weth back.
-            uint256 wethToDeposit = availableWeth -
-                (weth.balanceOf(address(wethJoin)) - wethJoin.storedBalance());
-            weth.safeTransfer(address(wethJoin), wethToDeposit);
-
-            uint256 wethBalance = weth.balanceOf(address(this));
-            if (wethBalance < minWeth) revert SlippageFailure();
-            // Transferring the leftover to the user
-            IERC20(weth).safeTransfer(msg.sender, wethBalance);
-        }
-
-        // Give the vault back to the sender, just in case there is anything left
-        giver.give(vaultId, msg.sender);
     }
 
     /// @dev    - We have borrowed liquidity tokens, for which we have a debt.
