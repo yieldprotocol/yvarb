@@ -292,7 +292,7 @@ contract YieldStEthLever is YieldLeverBase {
         if (status == Operation.BORROW) {
             uint128 baseAmount = uint128(bytes16(data[19:35]));
             uint256 minCollateral = uint256(bytes32(data[35:67]));
-            borrow(
+            _borrow(
                 seriesId,
                 vaultId,
                 baseAmount,
@@ -301,11 +301,11 @@ contract YieldStEthLever is YieldLeverBase {
                 minCollateral
             );
         } else if (status == Operation.REPAY) {
-            repay(vaultId, seriesId, uint128(borrowAmount + fee), data);
+            _repay(vaultId, seriesId, uint128(borrowAmount + fee), data);
         } else if (status == Operation.CLOSE) {
             uint256 ink = uint256(bytes32(data[19:51]));
             uint256 art = uint256(bytes32(data[51:83]));
-            close(vaultId, ink, art);
+            _close(vaultId, ink, art);
         }
         return FLASH_LOAN_RETURN;
     }
@@ -322,7 +322,7 @@ contract YieldStEthLever is YieldLeverBase {
     /// @param fee The fee that will be issued by the flash loan.
     /// @param minCollateral The final amount of collateral to end up with, or
     ///     the function will revert. Used to prevent slippage.
-    function borrow(
+    function _borrow(
         bytes6 seriesId,
         bytes12 vaultId,
         uint128 baseAmount,
@@ -390,7 +390,7 @@ contract YieldStEthLever is YieldLeverBase {
     /// @param borrowAmountPlusFee The amount of fyWeth that we have borrowed,
     ///     plus the fee. This should be our final balance.
     /// @param data Data containing the rest of the information
-    function repay(
+    function _repay(
         bytes12 vaultId,
         bytes6 seriesId,
         uint256 borrowAmountPlusFee, // Amount of FYToken received
@@ -427,7 +427,8 @@ contract YieldStEthLever is YieldLeverBase {
 
         // Convert weth to FY to repay loan. We want `borrowAmountPlusFee`.
         IPool pool = IPool(ladle.pools(seriesId));
-        uint128 wethSpent = pool.buyFYTokenPreview(borrowAmountPlusFee.u128()) + 1;// 1 wei is added to mitigate the euler bug
+        uint128 wethSpent = pool.buyFYTokenPreview(borrowAmountPlusFee.u128()) +
+            1; // 1 wei is added to mitigate the euler bug
         weth.safeTransfer(address(pool), wethSpent);
         pool.buyFYToken(address(this), borrowAmountPlusFee.u128(), wethSpent);
 
@@ -452,7 +453,7 @@ contract YieldStEthLever is YieldLeverBase {
     /// @param ink The collateral to take from the vault.
     /// @param art The debt to repay. This is denominated in fyTokens, even
     ///     though the payment is done in terms of WEth.
-    function close(
+    function _close(
         bytes12 vaultId,
         uint256 ink,
         uint256 art
