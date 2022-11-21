@@ -60,15 +60,6 @@ contract YieldStEthLever is YieldLeverBase {
         steth.approve(address(wsteth), type(uint256).max);
     }
 
-    /// @notice Approve maximally for an fyToken.
-    /// @param seriesId The id of the pool to approve to.
-    function approveFyToken(bytes6 seriesId) external {
-        IPool(ladle.pools(seriesId)).fyToken().approve(
-            address(ladle),
-            type(uint256).max
-        );
-    }
-
     /// @notice Invest by creating a levered vault.
     ///
     ///     We invest `FYToken`. For this the user should have given approval
@@ -187,6 +178,7 @@ contract YieldStEthLever is YieldLeverBase {
                 bytes20(msg.sender), // [83:103]
                 bytes32(minWeth) // [103:135]
             );
+            
             bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
                 this, // Loan Receiver
                 address(fyToken), // Loan Token
@@ -400,7 +392,11 @@ contract YieldStEthLever is YieldLeverBase {
         uint256 art = uint256(bytes32(data[51:83]));
         address borrower = address(bytes20(data[83:103]));
         uint256 minWeth = uint256(bytes32(data[103:135]));
-
+        IPool pool = IPool(ladle.pools(seriesId));
+        pool.fyToken().approve(
+            address(ladle),
+            art
+        );
         // Repay the vault, get collateral back.
         ladle.pour(
             vaultId,
@@ -426,7 +422,7 @@ contract YieldStEthLever is YieldLeverBase {
         );
 
         // Convert weth to FY to repay loan. We want `borrowAmountPlusFee`.
-        IPool pool = IPool(ladle.pools(seriesId));
+        
         uint128 wethSpent = pool.buyFYTokenPreview(borrowAmountPlusFee.u128()) +
             1; // 1 wei is added to mitigate the euler bug
         weth.safeTransfer(address(pool), wethSpent);

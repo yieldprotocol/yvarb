@@ -66,18 +66,11 @@ abstract contract ZeroState is Test {
 
     function setUp() public virtual {
         lever = new YieldStEthLever(giver);
-        lever.approveFyToken(seriesId);
 
         //Label
         vm.label(address(lever), "YieldLever");
-
-        // vm.prank(fyTokenWhale);
-        // fyToken.transfer(address(this), 2e18);
-
         vm.prank(ethWhale);
         address(this).call{value: 1e18}("");
-        // vm.prank(fyTokenWhale);
-        // fyToken.transfer(address(lever), 3e18);
         AccessControl giverAccessControl = AccessControl(address(giver));
         giverAccessControl.grantRole(0xe4fd9dc5, timeLock);
         giverAccessControl.grantRole(0x35775afb, address(lever));
