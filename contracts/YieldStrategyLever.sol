@@ -133,11 +133,7 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
     ) external returns (bytes12 vaultId) {
         if (operation != Operation.BORROW) revert OnlyBorrow();
         IPool pool = IPool(LADLE.pools(seriesId));
-        pool.base().safeTransferFrom(
-            msg.sender,
-            address(pool),
-            amountToInvest
-        );
+        pool.base().safeTransferFrom(msg.sender, address(pool), amountToInvest);
         // Build the vault
         (vaultId, ) = LADLE.build(seriesId, strategyId, 0);
 
@@ -165,12 +161,17 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         // This is the amount to deposit, so we check for slippage here. As
         // long as we end up with the desired amount, it doesn't matter what
         // slippage occurred where.
-        if (balances.ink < minCollateral)
-            revert SlippageFailure();
+        if (balances.ink < minCollateral) revert SlippageFailure();
 
         giver.give(vaultId, msg.sender);
 
-        emit Invested(vaultId, seriesId, msg.sender, balances.ink, balances.art);
+        emit Invested(
+            vaultId,
+            seriesId,
+            msg.sender,
+            balances.ink,
+            balances.art
+        );
     }
 
     /// @notice Divest, either before or after maturity.
@@ -240,8 +241,11 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
                     data
                 );
                 // Selling off leftover fyToken to get base in return
-                if(fyToken.balanceOf(address(this)) > 0){
-                    fyToken.transfer(address(pool), fyToken.balanceOf(address(this)));
+                if (fyToken.balanceOf(address(this)) > 0) {
+                    fyToken.transfer(
+                        address(pool),
+                        fyToken.balanceOf(address(this))
+                    );
                     pool.sellFYToken(address(this), 0);
                 }
             } else if (operation == Operation.CLOSE) {
@@ -256,9 +260,8 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
                     address(baseAsset), // Loan Token
                     base, // Loan Amount
                     data
-                );                
+                );
             } else revert OnlyRepayOrClose();
-
         }
         if (!success) revert FlashLoanFailure();
 
@@ -267,10 +270,17 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         uint256 assetBalance = baseAsset.balanceOf(address(this));
         if (assetBalance < minBaseOut) revert SlippageFailure();
         // Transferring the leftover to the user
-        if(assetBalance > 0)
+        if (assetBalance > 0)
             IERC20(baseAsset).safeTransfer(msg.sender, assetBalance);
 
-        emit Divested(operation, vaultId, seriesId, msg.sender, assetBalance, art);
+        emit Divested(
+            operation,
+            vaultId,
+            seriesId,
+            msg.sender,
+            assetBalance,
+            art
+        );
     }
 
     /// @notice Called by a flash lender. The primary purpose is to check
@@ -312,16 +322,47 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         if (status == Operation.BORROW) {
             uint256 fyTokenToBuy = uint256(bytes32(data[25:57]));
             address borrower = address(bytes20(data[57:77]));
-            _borrow(vaultId, seriesId, ilkId, borrowAmount, fee, fyTokenToBuy,borrower);
+            _borrow(
+                vaultId,
+                seriesId,
+                ilkId,
+                borrowAmount,
+                fee,
+                fyTokenToBuy,
+                borrower
+            );
         } else {
             uint256 ink = uint256(bytes32(data[25:57]));
             uint256 art = uint256(bytes32(data[57:89]));
             if (status == Operation.REPAY) {
-                _repay(vaultId, seriesId, ilkId, (borrowAmount + fee), ink, art);
+                _repay(
+                    vaultId,
+                    seriesId,
+                    ilkId,
+                    (borrowAmount + fee),
+                    ink,
+                    art
+                );
             } else if (status == Operation.CLOSE) {
-                _close(IERC20(token), vaultId, seriesId, ilkId, borrowAmount, ink, art);
+                _close(
+                    IERC20(token),
+                    vaultId,
+                    seriesId,
+                    ilkId,
+                    borrowAmount,
+                    ink,
+                    art
+                );
             } else if (status == Operation.REDEEM) {
-                _redeem(IERC20(token), vaultId, seriesId, ilkId, borrowAmount, ink, art);
+                _redeem(
+                    IERC20(token),
+                    vaultId,
+                    seriesId,
+                    ilkId,
+                    borrowAmount,
+                    ink,
+                    art
+                );
             }
         }
     }
@@ -414,13 +455,12 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
 
         // Buy fyToken to repay the flash loan
         if (borrowAmountPlusFee > fyTokens) {
-            uint128 fyTokenToBuy = (borrowAmountPlusFee - fyTokens).u128();
-            pool.base().transfer(address(pool), pool.buyFYTokenPreview(fyTokenToBuy));
-            pool.buyFYToken(
-                address(this),
-                fyTokenToBuy,
-                0
+            uint128 fyTokenToBuy = (borrowAmountPlusFee - fyTokens).u128() + 1;
+            pool.base().transfer(
+                address(pool),
+                pool.buyFYTokenPreview(fyTokenToBuy)
             );
+            pool.buyFYToken(address(this), fyTokenToBuy, 0);
         }
     }
 
@@ -443,7 +483,9 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
     ) internal {
         address strategy = CAULDRON.assets(strategyId);
         address pool = LADLE.pools(seriesId);
-        address baseJoin = address(LADLE.joins(CAULDRON.series(seriesId).baseId));
+        address baseJoin = address(
+            LADLE.joins(CAULDRON.series(seriesId).baseId)
+        );
 
         // Payback debt to get back the underlying
         baseAsset.safeTransfer(baseJoin, debtInBase);
@@ -455,7 +497,6 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         // Burn LP token to obtain base to repay the flash loan
         IPool(pool).burnForBase(address(this), 0, type(uint256).max);
     }
-
 
     /// @notice Unwind position using the base asset and redeeming any fyToken
     /// @param baseAsset The base asset used for repayment
@@ -477,7 +518,9 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         address strategy = CAULDRON.assets(strategyId);
         address pool = LADLE.pools(seriesId);
         address fyToken = address(IPool(pool).fyToken());
-        address baseJoin = address(LADLE.joins(CAULDRON.series(seriesId).baseId));
+        address baseJoin = address(
+            LADLE.joins(CAULDRON.series(seriesId).baseId)
+        );
 
         // Payback debt to get back the underlying
         baseAsset.safeTransfer(baseJoin, debtInBase);
@@ -487,7 +530,12 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         IStrategy(strategy).burn(pool);
 
         // Burn LP token to obtain base to repay the flash loan, redeem the fyToken
-        (,, uint256 fyTokens) = IPool(pool).burn(address(this), fyToken, 0, type(uint256).max);
+        (, , uint256 fyTokens) = IPool(pool).burn(
+            address(this),
+            fyToken,
+            0,
+            type(uint256).max
+        );
         IFYToken(fyToken).redeem(address(this), fyTokens);
     }
 

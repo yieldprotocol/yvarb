@@ -74,16 +74,20 @@ contract YieldStEthLever is YieldLeverBase {
     ///     will revert.
     function invest(
         bytes6 seriesId,
+        uint256 baseAmount,
         uint256 borrowAmount,
         uint256 minCollateral
     ) external payable returns (bytes12 vaultId) {
         IPool pool = IPool(ladle.pools(seriesId));
         IMaturingToken fyToken = pool.fyToken();
-
-        // Convert ETH to WETH
-        weth.deposit{value: msg.value}();
-        // Sell WETH to get fyToken
-        weth.safeTransfer(address(pool), msg.value);
+        if (msg.value > 0) {
+            // Convert ETH to WETH
+            weth.deposit{value: msg.value}();
+            // Sell WETH to get fyToken
+            weth.safeTransfer(address(pool), msg.value);
+        } else {
+            weth.safeTransferFrom(msg.sender, address(pool), baseAmount);
+        }
         uint128 fyReceived = pool.sellBase(address(this), 0);
         // Build the vault
         (vaultId, ) = ladle.build(seriesId, ilkId, 0);
@@ -178,7 +182,7 @@ contract YieldStEthLever is YieldLeverBase {
                 bytes20(msg.sender), // [83:103]
                 bytes32(minWeth) // [103:135]
             );
-            
+
             bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
                 this, // Loan Receiver
                 address(fyToken), // Loan Token
@@ -393,10 +397,7 @@ contract YieldStEthLever is YieldLeverBase {
         address borrower = address(bytes20(data[83:103]));
         uint256 minWeth = uint256(bytes32(data[103:135]));
         IPool pool = IPool(ladle.pools(seriesId));
-        pool.fyToken().approve(
-            address(ladle),
-            art
-        );
+        pool.fyToken().approve(address(ladle), art);
         // Repay the vault, get collateral back.
         ladle.pour(
             vaultId,
@@ -422,7 +423,7 @@ contract YieldStEthLever is YieldLeverBase {
         );
 
         // Convert weth to FY to repay loan. We want `borrowAmountPlusFee`.
-        
+
         uint128 wethSpent = pool.buyFYTokenPreview(borrowAmountPlusFee.u128()) +
             1; // 1 wei is added to mitigate the euler bug
         weth.safeTransfer(address(pool), wethSpent);

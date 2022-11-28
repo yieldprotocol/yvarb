@@ -18,6 +18,7 @@ abstract contract ZeroState is Test {
     address timeLock = 0x3b870db67a45611CF4723d44487EAF398fAc51E3;
     address fyTokenWhale = 0x1c15b746360BB8E792C6ED8cB83f272Ce1D170E0;
     address ethWhale = 0xDA9dfA130Df4dE4673b89022EE50ff26f6EA73Cf;
+    address wethWhale = 0xF04a5cC80B1E94C69B48f5ee68a08CD2F09A7c3E;
     YieldStEthLever lever;
     Protocol protocol;
     Giver giver;
@@ -71,13 +72,21 @@ abstract contract ZeroState is Test {
         vm.label(address(lever), "YieldLever");
         vm.prank(ethWhale);
         address(this).call{value: 1e18}("");
+        vm.prank(wethWhale);
+        weth.transfer(address(this), 1e18);
+
+        weth.approve(address(lever), 1e18);
         AccessControl giverAccessControl = AccessControl(address(giver));
         giverAccessControl.grantRole(0xe4fd9dc5, timeLock);
         giverAccessControl.grantRole(0x35775afb, address(lever));
     }
 
     /// Return the available balance in the join.
-    function availableBalance(FlashJoin join) public view returns (uint256 available) {
+    function availableBalance(FlashJoin join)
+        public
+        view
+        returns (uint256 available)
+    {
         IERC20 token = IERC20(join.asset());
         available = token.balanceOf(address(join)) - join.storedBalance();
     }
@@ -96,6 +105,27 @@ abstract contract ZeroState is Test {
 
         vaultId = lever.invest{value: baseAmount}(
             seriesId,
+            baseAmount,
+            borrowAmount,
+            minCollateral
+        );
+    }
+
+    /// @notice Create a vault.
+    function investWETH(uint128 baseAmount, uint128 borrowAmount)
+        public
+        returns (bytes12 vaultId)
+    {
+        fyToken.approve(address(lever), baseAmount);
+        // Expect at least 80% of the value to end up as collateral
+        uint256 wethAmount = pool.sellFYTokenPreview(baseAmount + borrowAmount);
+        uint128 minCollateral = uint128(
+            (stableSwap.get_dy(0, 1, wethAmount) * 80) / 100
+        );
+
+        vaultId = lever.invest(
+            seriesId,
+            baseAmount,
             borrowAmount,
             minCollateral
         );
@@ -192,7 +222,12 @@ contract ZeroStateTest is ZeroState {
         );
 
         vm.expectRevert(SlippageFailure.selector);
-        lever.invest{value: baseAmount}(seriesId, borrowAmount, minCollateral);
+        lever.invest{value: baseAmount}(
+            seriesId,
+            0,
+            borrowAmount,
+            minCollateral
+        );
     }
 }
 
@@ -274,5 +309,78 @@ contract VaultCreatedStateTest is VaultCreatedState {
 
         vm.expectRevert(SlippageFailure.selector);
         lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
+    }
+}
+
+contract ZeroStateTestWETH is ZeroState {
+    function testVault() public {
+        uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
+        uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
+
+        bytes12 vaultId = investWETH(1e18, 3.5e18);
+        DataTypes.Vault memory vault = cauldron.vaults(vaultId);
+        assertEq(vault.owner, address(this));
+
+        // No tokens should be left in the contract
+        assertEq(weth.balanceOf(address(lever)), 0);
+        assertEq(wsteth.balanceOf(address(lever)), 0);
+        assertEq(steth.balanceOf(address(lever)), 0);
+        assertEq(fyToken.balanceOf(address(lever)), 0);
+
+        // Assert that the join state is the same as the start
+        assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
+        assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
+    }
+
+    function testLever() public {
+        uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
+        uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
+
+        bytes12 vaultId = investWETH(1e18, 3.5e18);
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+        assertEq(balances.art, 3.5e18);
+
+        // No tokens should be left in the contract
+        assertEq(weth.balanceOf(address(lever)), 0);
+        assertEq(wsteth.balanceOf(address(lever)), 0);
+        assertEq(steth.balanceOf(address(lever)), 0);
+        assertEq(fyToken.balanceOf(address(lever)), 0);
+
+        // Assert that the join state is the same as the start
+        assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
+        assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
+    }
+
+    /// @notice This function should fail if called externally.
+    function testOnFlashLoan() public {
+        vm.expectRevert(FlashLoanFailure.selector);
+        lever.onFlashLoan(
+            address(lever), // Lie!
+            address(fyToken),
+            1e18,
+            1e16,
+            bytes.concat(
+                bytes1(0x01),
+                seriesId,
+                bytes12(0),
+                bytes16(0),
+                bytes16(0)
+            )
+        );
+    }
+
+    function testInvestRevertOnMinEth() public {
+        uint128 baseAmount = 4e17;
+        uint128 borrowAmount = 8e17;
+        fyToken.approve(address(lever), baseAmount);
+
+        // Unreasonable expectation: twice the total value as collateral?
+        uint256 wethAmount = pool.sellFYTokenPreview(baseAmount + borrowAmount);
+        uint128 minCollateral = uint128(
+            stableSwap.get_dy(0, 1, wethAmount) * 2
+        );
+
+        vm.expectRevert(SlippageFailure.selector);
+        lever.invest(seriesId, baseAmount, borrowAmount, minCollateral);
     }
 }
