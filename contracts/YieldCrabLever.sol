@@ -40,6 +40,20 @@ interface ICrabStrategy {
     function flashDeposit(uint256 _ethToDeposit, uint24 _poolFee)
         external
         payable;
+
+    /**
+     * @notice flash withdraw from strategy, providing strategy tokens, buying wSqueeth, burning and receiving ETH
+     * @dev this function will execute a flash swap where it receives wSqueeth, burns, withdraws ETH and then repays the flash swap with ETH
+     * @param _crabAmount strategy token amount to burn
+     * @param _maxEthToPay maximum ETH to pay to buy back the wSqueeth debt
+     * @param _poolFee Uniswap pool fee
+
+     */
+    function flashWithdraw(
+        uint256 _crabAmount,
+        uint256 _maxEthToPay,
+        uint24 _poolFee
+    ) external;
 }
 
 /// @notice This contracts allows a user to 'lever up' via StEth. The concept
@@ -99,6 +113,15 @@ contract YieldCrabLever is YieldLeverBase {
                 address(this),
                 amountToInvest
             );
+        } else {
+            if (msg.value == 0) {
+                pool.base().safeTransferFrom(
+                    msg.sender,
+                    address(this),
+                    amountToInvest
+                );
+                weth.withdraw(amountToInvest);
+            }
         }
         // for ETH borrowing,
         // 1. flash borrow fyETH
@@ -153,6 +176,58 @@ contract YieldCrabLever is YieldLeverBase {
         );
     }
 
+    /// @notice Divest, either before or after maturity.
+    /// @param operation REPAY, CLOSE or REDEEM
+    /// @param vaultId The vault to divest from.
+    /// @param seriesId The series
+    /// @param ilkId The ilkId
+    /// @param ink The amount of collateral to recover.
+    /// @param art The amount of debt to repay.
+    /// @param minBaseOut Used to minimize slippage. The transaction will revert
+    ///     if we don't obtain at least this much of the base asset.
+    function divest(
+        Operation operation,
+        bytes12 vaultId,
+        bytes6 seriesId,
+        bytes6 ilkId,
+        uint256 ink,
+        uint256 art,
+        uint256 minBaseOut
+    ) external {
+        // Test that the caller is the owner of the vault.
+        // This is important as we will take the vault from the user.
+        require(cauldron.vaults(vaultId).owner == msg.sender);
+
+        // Give the vault to the contract
+        giver.seize(vaultId, address(this));
+        if (
+            uint32(block.timestamp) > cauldron.series(seriesId).maturity
+        ) {} else {
+            IPool pool = IPool(ladle.pools(seriesId));
+            IMaturingToken fyToken = pool.fyToken();
+            // Repay:
+            // Series is not past maturity.
+            // Borrow to repay debt, move directly to the pool.
+            bytes memory data = bytes.concat(
+                bytes1(bytes1(uint8(uint256(Operation.REPAY)))), // [0:1]
+                seriesId, // [1:7]
+                vaultId, // [7:19]
+                ilkId, // [19:25]
+                bytes32(ink), // [25:57]
+                bytes32(art), // [57:89]
+                bytes20(msg.sender), // [89:109]
+                bytes32(minBaseOut) // [109:141]
+            );
+            bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
+                this, // Loan Receiver
+                address(fyToken), // Loan Token
+                art, // Loan Amount: borrow exactly the debt to repay.
+                data
+            );
+            if (!success) revert FlashLoanFailure();
+        }
+    }
+
     function onFlashLoan(
         address initiator,
         address token, // The token, not checked as we check the lender address.
@@ -189,9 +264,16 @@ contract YieldCrabLever is YieldLeverBase {
                 fee,
                 minCollateral
             );
-        } else if (status == Operation.REPAY) {} else if (
-            status == Operation.CLOSE
-        ) {}
+        } else if (status == Operation.REPAY) {
+            _repay(
+                vaultId,
+                seriesId,
+                ilkId,
+                borrowAmount + fee,
+                uint256(bytes32(data[25:57])), //ink
+                uint256(bytes32(data[57:89])) //art
+            );
+        } else if (status == Operation.CLOSE) {}
     }
 
     /// @notice This function is called from within the flash loan. The high
@@ -223,28 +305,8 @@ contract YieldCrabLever is YieldLeverBase {
         if (ilkId == wethId) {
             weth.withdraw(baseReceived);
         } else if (ilkId == daiId || ilkId == usdcId) {
-            // Sell dai/usdc to get eth
-            baseReceived = IERC20(cauldron.assets(ilkId)).balanceOf(
-                address(this)
-            );
-
-            IERC20(cauldron.assets(ilkId)).approve(
-                address(swapRouter),
-                baseReceived
-            );
-            ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
-                .ExactInputSingleParams({
-                    tokenIn: cauldron.assets(ilkId),
-                    tokenOut: address(weth),
-                    fee: 3000,
-                    recipient: address(this),
-                    deadline: block.timestamp,
-                    amountIn: baseReceived,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                });
-
-            weth.withdraw(swapRouter.exactInputSingle(params));
+            // Swap dai/usdc to get weth & withdraw
+            weth.withdraw(_uniswap(cauldron.assets(ilkId), address(weth)));
         } else {
             revert();
         }
@@ -268,6 +330,70 @@ contract YieldCrabLever is YieldLeverBase {
             crabBalance.u128().i128(),
             borrowAmount.u128().i128()
         );
+    }
+
+    function _uniswap(address tokenIn_, address tokenOut_)
+        internal
+        returns (uint256 amountReceived)
+    {
+        uint256 amountIn_ = IERC20(tokenIn_).balanceOf(address(this));
+        IERC20(tokenIn_).approve(address(swapRouter), amountIn_);
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+            .ExactInputSingleParams({
+                tokenIn: tokenIn_,
+                tokenOut: tokenOut_,
+                fee: 3000,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: amountIn_,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+        amountReceived = swapRouter.exactInputSingle(params);
+    }
+
+    /// @notice Unwind position and repay using fyToken
+    /// @param vaultId The vault to repay.
+    /// @param seriesId The seriesId corresponding to the vault.
+    /// @param ilkId The id of the strategy being invested.
+    /// @param borrowAmountPlusFee The amount of fyToken that we have borrowed,
+    ///     plus the fee. This should be our final balance.
+    /// @param ink The amount of collateral to retake.
+    /// @param art The debt to repay.
+    function _repay(
+        bytes12 vaultId,
+        bytes6 seriesId,
+        bytes6 ilkId,
+        uint256 borrowAmountPlusFee,
+        uint256 ink,
+        uint256 art
+    ) internal {
+        IPool pool = IPool(ladle.pools(seriesId));
+        address fyToken = address(pool.fyToken());
+
+        // Payback debt to get back the underlying
+        IERC20(fyToken).transfer(fyToken, art);
+        ladle.pour(
+            vaultId,
+            address(this),
+            -ink.u128().i128(),
+            -art.u128().i128()
+        );
+
+        crabStrategy.flashWithdraw(ink, type(uint256).max, 3000);
+
+        weth.deposit{value: address(this).balance}();
+        if (ilkId != wethId) {
+            _uniswap(address(weth), cauldron.assets(ilkId));
+        }
+
+        uint128 fyTokenToBuy = borrowAmountPlusFee.u128();
+        pool.base().transfer(
+            address(pool),
+            pool.buyFYTokenPreview(fyTokenToBuy)
+        );
+        pool.buyFYToken(address(this), fyTokenToBuy, 0);
     }
 
     receive() external payable {}

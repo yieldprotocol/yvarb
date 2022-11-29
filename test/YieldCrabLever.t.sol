@@ -29,7 +29,7 @@ abstract contract ZeroState is Test {
     FlashJoin flashJoin;
     bytes6 public seriesId = 0x303230380000; //0x303130380000; //0x303030380000;
     bytes6 public ilkId = 0x303200000000; //0x303100000000; //0x303000000000;
-    ICauldron cauldron;
+    ICauldron cauldron = ICauldron(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867);
 
     IERC20 constant weth = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     IERC20 constant usdc = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
@@ -183,5 +183,110 @@ contract ZeroStateTest is ZeroState {
 
     //     vm.expectRevert(SlippageFailure.selector);
     //     lever.invest{value: baseAmount}(seriesId, borrowAmount, minCollateral);
+    // }
+}
+
+abstract contract VaultCreatedState is ZeroState {
+    bytes12 vaultId;
+
+    function setUp() public override {
+        super.setUp();
+        vaultId = investRest(25e6, 1e6);
+    }
+
+    function unwind() internal returns (bytes12) {
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+
+        lever.divest(
+            YieldLeverBase.Operation.REPAY,
+            vaultId,
+            seriesId,
+            ilkId,
+            balances.ink,
+            balances.art,
+            0
+        );
+        return vaultId;
+    }
+}
+
+contract VaultCreatedStateTest is VaultCreatedState {
+    function testRepay() public {
+        // uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
+        // uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
+
+        unwind();
+
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+        assertEq(balances.art, 0);
+        assertEq(balances.ink, 0);
+
+        // // A very weak condition, but we should have at least some weth back.
+        // assertGt(weth.balanceOf(address(this)), 0);
+
+        // // No tokens should be left in the contract
+        // assertEq(weth.balanceOf(address(lever)), 0);
+        // assertEq(wsteth.balanceOf(address(lever)), 0);
+        // assertEq(steth.balanceOf(address(lever)), 0);
+        // assertEq(fyToken.balanceOf(address(lever)), 0);
+
+        // // Assert that the join state is the same as the start
+        // assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
+        // assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
+    }
+
+    // function testClose() public {
+    //     uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
+    //     uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
+
+    //     DataTypes.Series memory series_ = cauldron.series(seriesId);
+
+    //     vm.warp(series_.maturity);
+
+    //     unwind();
+
+    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
+    //     assertEq(balances.art, 0);
+    //     assertEq(balances.ink, 0);
+
+    //     // A very weak condition, but we should have at least some weth back.
+    //     assertGt(weth.balanceOf(address(this)), 0);
+
+    //     // No tokens should be left in the contract
+    //     assertEq(weth.balanceOf(address(lever)), 0);
+    //     assertEq(wsteth.balanceOf(address(lever)), 0);
+    //     assertEq(steth.balanceOf(address(lever)), 0);
+    //     assertEq(fyToken.balanceOf(address(lever)), 0);
+
+    //     // Assert that the join state is the same as the start
+    //     assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
+    //     assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
+    // }
+
+    // function testRepayRevertOnSlippage() public {
+    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
+
+    //     // Rough calculation of the minimal amount of weth that we want back.
+    //     // In reality, the debt is not in weth but in fyWeth.
+    //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
+    //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
+
+    //     vm.expectRevert(SlippageFailure.selector);
+    //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
+    // }
+
+    // function testCloseRevertOnSlippage() public {
+    //     DataTypes.Series memory series_ = cauldron.series(seriesId);
+    //     vm.warp(series_.maturity);
+
+    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
+
+    //     // Rough calculation of the minimal amount of weth that we want back.
+    //     // In reality, the debt is not in weth but in fyWeth.
+    //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
+    //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
+
+    //     vm.expectRevert(SlippageFailure.selector);
+    //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
     // }
 }
