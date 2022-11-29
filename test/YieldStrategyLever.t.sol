@@ -10,9 +10,9 @@ contract DAILeverInvestedStateTest is InvestedState {
         strategyIlkId = strategyIlkIdDAI;
         baseAmount = 10000e18;
         borrowAmount = 1000e18;
-        fyTokenToBuy = baseAmount / 2;
-        buyFor =  500000e18;
-        sellFor = 100000e18;
+        fyTokenToBuy = 1000e18;
+        buyFor = 10000e18;
+        sellFor = 10000e18;
         super.setUp();
     }
 }
@@ -23,9 +23,9 @@ contract DAILeverInvestedMatureStateTest is InvestedMatureState {
         strategyIlkId = strategyIlkIdDAI;
         baseAmount = 10000e18;
         borrowAmount = 1000e18;
-        fyTokenToBuy = baseAmount / 2;
-        buyFor = 100000e18;
-        sellFor = 100000e18;
+        fyTokenToBuy = 1000e18;
+        buyFor = 10000e18;
+        sellFor = 10000e18;
         super.setUp();
     }
 }
