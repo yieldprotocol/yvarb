@@ -4,6 +4,7 @@ pragma solidity ^0.8.14;
 import "./YieldLeverBase.sol";
 import "@yield-protocol/yieldspace-tv/src/interfaces/IMaturingToken.sol";
 import "@yield-protocol/utils-v2/contracts/interfaces/IWETH9.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "forge-std/console.sol";
 
 interface ICrabStrategy {
@@ -41,28 +42,6 @@ interface ICrabStrategy {
         payable;
 }
 
-interface ICurveSwap {
-    function get_exchange_routing(
-        address _initial,
-        address _target,
-        uint256 _amount
-    )
-        external
-        returns (
-            address[6] memory _route,
-            uint256[8] memory _indices,
-            uint256 _expected
-        );
-
-    function exchange(
-        uint256 _amount,
-        address[6] calldata _route,
-        uint256[8] calldata _indices,
-        uint256 _min_received,
-        address _receiver
-    ) external;
-}
-
 /// @notice This contracts allows a user to 'lever up' via StEth. The concept
 ///     is as follows: Using Yield, it is possible to borrow Weth, which in
 ///     turn can be used as collateral, which in turn can be used to borrow and
@@ -83,9 +62,8 @@ contract YieldCrabLever is YieldLeverBase {
     ICrabStrategy public constant crabStrategy =
         ICrabStrategy(0x3B960E47784150F5a63777201ee2B15253D713e8);
 
-    ICurveSwap public constant curveSwap =
-        ICurveSwap(0xfA9a30350048B2BF66865ee20363067c66f67e58);
-
+    ISwapRouter public constant swapRouter =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
     IERC20 public crab;
     bytes6 constant crabId = 0x333800000000;
     bytes6 constant wethId = 0x303000000000;
@@ -249,27 +227,24 @@ contract YieldCrabLever is YieldLeverBase {
             baseReceived = IERC20(cauldron.assets(ilkId)).balanceOf(
                 address(this)
             );
+
             IERC20(cauldron.assets(ilkId)).approve(
-                address(curveSwap),
+                address(swapRouter),
                 baseReceived
             );
+            ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+                .ExactInputSingleParams({
+                    tokenIn: cauldron.assets(ilkId),
+                    tokenOut: address(weth),
+                    fee: 3000,
+                    recipient: address(this),
+                    deadline: block.timestamp,
+                    amountIn: baseReceived,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                });
 
-            (
-                address[6] memory _route,
-                uint256[8] memory _indices,
-                uint256 _expected
-            ) = curveSwap.get_exchange_routing(
-                    cauldron.assets(ilkId),
-                    0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE,
-                    baseReceived
-                );
-            curveSwap.exchange(
-                baseReceived,
-                _route,
-                _indices,
-                0,
-                address(this)
-            );
+            weth.withdraw(swapRouter.exactInputSingle(params));
         } else {
             revert();
         }
