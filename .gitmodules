@@ -16,3 +16,6 @@
 [submodule "lib/yieldspace-tv"]
 	path = lib/yieldspace-tv
 	url = https://github.com/yieldprotocol/yieldspace-tv
+[submodule "lib/v3-periphery"]
+	path = lib/v3-periphery
+	url = https://github.com/uniswap/v3-periphery
