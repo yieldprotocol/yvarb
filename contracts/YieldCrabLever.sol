@@ -3,8 +3,13 @@ pragma solidity ^0.8.14;
 
 import "./YieldLeverBase.sol";
 import "@yield-protocol/yieldspace-tv/src/interfaces/IMaturingToken.sol";
+import "@yield-protocol/utils-v2/contracts/interfaces/IWETH9.sol";
+import "forge-std/console.sol";
+
 interface ICrabStrategy {
     function totalSupply() external view returns (uint256);
+
+    function balanceOf(address _user) external view returns (uint256);
 
     /**
      * @notice get the vault composition of the strategy
@@ -31,7 +36,31 @@ interface ICrabStrategy {
      * @param _ethToDeposit total ETH that will be deposited in to the strategy which is a combination of msg.value and flash swap proceeds
      * @param _poolFee Uniswap pool fee
      */
-    function flashDeposit(uint256 _ethToDeposit, uint24 _poolFee) external;
+    function flashDeposit(uint256 _ethToDeposit, uint24 _poolFee)
+        external
+        payable;
+}
+
+interface ICurveSwap {
+    function get_exchange_routing(
+        address _initial,
+        address _target,
+        uint256 _amount
+    )
+        external
+        returns (
+            address[6] memory _route,
+            uint256[8] memory _indices,
+            uint256 _expected
+        );
+
+    function exchange(
+        uint256 _amount,
+        address[6] calldata _route,
+        uint256[8] calldata _indices,
+        uint256 _min_received,
+        address _receiver
+    ) external;
 }
 
 /// @notice This contracts allows a user to 'lever up' via StEth. The concept
@@ -44,12 +73,24 @@ interface ICrabStrategy {
 ///     The flash loan is repayed using funds borrowed using your collateral.
 contract YieldCrabLever is YieldLeverBase {
     using TransferHelper for IERC20;
+    using TransferHelper for IMaturingToken;
+    using CastU128I128 for uint128;
+    using CastU256U128 for uint256;
 
-    constructor(Giver giver_) YieldLeverBase(giver_) {}
+    /// @notice WEth.
+    IWETH9 public constant weth =
+        IWETH9(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    ICrabStrategy public constant crabStrategy =
+        ICrabStrategy(0x3B960E47784150F5a63777201ee2B15253D713e8);
+
+    ICurveSwap public constant curveSwap =
+        ICurveSwap(0xfA9a30350048B2BF66865ee20363067c66f67e58);
 
     IERC20 public crab;
-    bytes6 crabId;
-    bytes6 ethId;
+    bytes6 constant crabId = 0x333800000000;
+    bytes6 constant wethId = 0x303000000000;
+    bytes6 constant daiId = 0x303100000000;
+    bytes6 constant usdcId = 0x303200000000;
 
     event Invested(
         bytes12 indexed vaultId,
@@ -58,6 +99,8 @@ contract YieldCrabLever is YieldLeverBase {
         uint256 investment,
         uint256 debt
     );
+
+    constructor(Giver giver_) YieldLeverBase(giver_) {}
 
     function invest(
         Operation operation,
@@ -68,30 +111,49 @@ contract YieldCrabLever is YieldLeverBase {
         uint256 minCollateral
     ) external payable returns (bytes12 vaultId) {
         if (operation != Operation.BORROW) revert OnlyBorrow();
+        IPool pool = IPool(ladle.pools(seriesId));
+        IMaturingToken fyToken = pool.fyToken();
         // Depend on ilkId we will have to choose the operation
-        
-        // USDC/DAI -> deposit DAI/USDC -> borrow fyETH -> flash loan fyETH ->buy ETH using fyETH -> deposit to get Crab -> borrow against crab to payback flash loan
-        
-        // ETH -> flashBorrow ETH -> flashDeposit to get crab -> deposit crab to get fyETH -> buy ETH to repay flashloan
-        
+        if (ilkId != wethId) {
+            // transfer the amountToInvest to this contract
+            pool.base().safeTransferFrom(
+                msg.sender,
+                address(this),
+                amountToInvest
+            );
+        }
+        // for ETH borrowing,
+        // 1. flash borrow fyETH
+        // 2. sell for ETH and combine with user ETH
+        // 3. deposit to get Crab
+        // 4. borrow against crab to payback flash loan
+
+        //for USDC borrowing,
+        // 1. flash borrow fyUSDC
+        // 2. sell for USDC and combine with USDC
+        // 3. sell USDC for ETH
+        // 4. deposit to get Crab
+        // 5. borrow against crab to payback flashloan
+
         // Build the vault
         (vaultId, ) = ladle.build(seriesId, crabId, 0);
 
         bytes memory data = bytes.concat(
             bytes1(uint8(uint256(operation))), //[0]
-            seriesId, //[1:7]
-            vaultId, //[7:19]
-            bytes32(amountToInvest), //[25:57]
-            bytes20(msg.sender) //[57:77]
+            seriesId, // [1:7]
+            vaultId, // [7:19]
+            ilkId, // [19:25]
+            bytes32(amountToInvest), // [25:57]
+            bytes32(borrowAmount), // [57:89]
+            bytes32(minCollateral) // [89:121]
         );
 
-        bool success = IERC3156FlashLender(address(ladle.joins(ethId)))
-            .flashLoan(
-                this, // Loan Receiver
-                cauldron.assets(ethId), // Loan Token
-                borrowAmount, // Loan Amount
-                data
-            );
+        bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
+            this, // Loan Receiver
+            address(fyToken), // Loan Token
+            borrowAmount, // Loan Amount
+            data
+        );
 
         if (!success) revert FlashLoanFailure();
 
@@ -138,9 +200,100 @@ contract YieldCrabLever is YieldLeverBase {
         IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
 
         if (status == Operation.BORROW) {
-
-        } else if (
-            status == Operation.REPAY
-        ) {} else if (status == Operation.CLOSE) {}
+            uint256 baseAmount = uint256(bytes32(data[25:57]));
+            uint256 minCollateral = uint256(bytes32(data[89:121]));
+            _borrow(
+                vaultId,
+                seriesId,
+                ilkId,
+                baseAmount,
+                borrowAmount,
+                fee,
+                minCollateral
+            );
+        } else if (status == Operation.REPAY) {} else if (
+            status == Operation.CLOSE
+        ) {}
     }
+
+    /// @notice This function is called from within the flash loan. The high
+    ///     level functionality is as follows:
+    /// @param vaultId The vault id to put collateral into and borrow from.
+    /// @param seriesId The pool (and thereby series) to borrow from.
+    /// @param ilkId a
+    /// @param baseAmount The amount of own collateral to supply.
+    /// @param borrowAmount The amount of FYWeth borrowed in the flash loan.
+    /// @param fee The fee that will be issued by the flash loan.
+    /// @param minCollateral The final amount of collateral to end up with, or
+    ///     the function will revert. Used to prevent slippage.
+    function _borrow(
+        bytes12 vaultId,
+        bytes6 seriesId,
+        bytes6 ilkId,
+        uint256 baseAmount,
+        uint256 borrowAmount,
+        uint256 fee,
+        uint256 minCollateral
+    ) internal {
+        IPool pool = IPool(ladle.pools(seriesId));
+        IMaturingToken fyToken = pool.fyToken();
+        // Get base by selling borrowed FYTokens.
+        fyToken.safeTransfer(address(pool), borrowAmount - fee);
+
+        uint256 baseReceived = pool.sellFYToken(address(this), 0);
+
+        if (ilkId == wethId) {
+            weth.withdraw(baseReceived);
+        } else if (ilkId == daiId || ilkId == usdcId) {
+            // Sell dai/usdc to get eth
+            baseReceived = IERC20(cauldron.assets(ilkId)).balanceOf(
+                address(this)
+            );
+            IERC20(cauldron.assets(ilkId)).approve(
+                address(curveSwap),
+                baseReceived
+            );
+
+            (
+                address[6] memory _route,
+                uint256[8] memory _indices,
+                uint256 _expected
+            ) = curveSwap.get_exchange_routing(
+                    cauldron.assets(ilkId),
+                    0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE,
+                    baseReceived
+                );
+            curveSwap.exchange(
+                baseReceived,
+                _route,
+                _indices,
+                0,
+                address(this)
+            );
+        } else {
+            revert();
+        }
+
+        // deposit to get Crab
+        crabStrategy.flashDeposit{value: address(this).balance}(
+            address(this).balance,
+            3000
+        );
+
+        uint256 crabBalance = crabStrategy.balanceOf(address(this));
+        IERC20(address(crabStrategy)).safeApprove(
+            address(ladle.joins(crabId)),
+            crabBalance
+        );
+
+        // borrow against crab to payback flashloan
+        ladle.pour(
+            vaultId,
+            address(this),
+            crabBalance.u128().i128(),
+            borrowAmount.u128().i128()
+        );
+    }
+
+    receive() external payable {}
 }
