@@ -27,6 +27,7 @@ jobs:
         env:
           ARBITRUM_RPC: $${{ secrets.ARBITRUM_RPC}}
           MAINNET_RPC: ${{ secrets.MAINNET_RPC }}
+          TENDERLY_RPC: ${{ secrets.TENDERLY_RPC }}
           MOCK: true
           NETWORK: MAINNET
 
@@ -35,5 +36,6 @@ jobs:
         env:
           ARBITRUM_RPC: $${{ secrets.ARBITRUM_RPC}}
           MAINNET_RPC: ${{ secrets.MAINNET_RPC }}
+          TENDERLY_RPC: ${{ secrets.TENDERLY_RPC }}
           MOCK: true
           NETWORK: MAINNET
