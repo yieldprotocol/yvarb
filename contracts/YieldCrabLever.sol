@@ -55,14 +55,10 @@ interface ICrabStrategy {
     ) external;
 }
 
-/// @notice This contracts allows a user to 'lever up' via StEth. The concept
-///     is as follows: Using Yield, it is possible to borrow Weth, which in
-///     turn can be used as collateral, which in turn can be used to borrow and
-///     so on.
-///
-///     The way to do this in practice is by first borrowing the desired debt
-///     through a flash loan and using this in additon to your own collateral.
-///     The flash loan is repayed using funds borrowed using your collateral.
+/// @title A contract to help users build levered position on crab strategy token
+///        using ETH/WETH/DAI/USDC as collateral
+/// @author iamsahu
+/// @notice Each external function has the details on how this works
 contract YieldCrabLever is YieldLeverBase {
     using TransferHelper for IERC20;
     using TransferHelper for IMaturingToken;
@@ -82,15 +78,21 @@ contract YieldCrabLever is YieldLeverBase {
 
     constructor(Giver giver_) YieldLeverBase(giver_) {}
 
+    /// @notice Invest by creating a levered vault.
+    /// The steps are as follows:
+    /// 1. Based on the ilk transfer it from the user
+    /// @param seriesId The series to invest in
+    /// @param ilkId The collateral to use
+    /// @param amountToInvest The amount of ETH/WETH/DAI/USDC supplied by the user
+    /// @param borrowAmount The amount of fyToken to be borrowed
+    /// @param minCollateral to be received
     function invest(
-        Operation operation,
         bytes6 seriesId,
         bytes6 ilkId,
         uint256 amountToInvest,
         uint256 borrowAmount,
         uint256 minCollateral
     ) external payable returns (bytes12 vaultId) {
-        if (operation != Operation.BORROW) revert OnlyBorrow();
         IPool pool = IPool(ladle.pools(seriesId));
         IMaturingToken fyToken = pool.fyToken();
         // Depend on ilkId we will have to choose the operation
@@ -103,12 +105,12 @@ contract YieldCrabLever is YieldLeverBase {
             );
         } else {
             if (msg.value == 0) {
+                // We are dealing with WETH so we need to transfer it from the
                 pool.base().safeTransferFrom(
                     msg.sender,
                     address(this),
                     amountToInvest
                 );
-                weth.withdraw(amountToInvest);
             }
         }
 
@@ -116,11 +118,11 @@ contract YieldCrabLever is YieldLeverBase {
         (vaultId, ) = ladle.build(seriesId, crabId, 0);
 
         bytes memory data = bytes.concat(
-            bytes1(uint8(uint256(operation))), //[0]
+            bytes1(uint8(uint256(Operation.BORROW))), //[0]
             seriesId, // [1:7]
             vaultId, // [7:19]
             ilkId, // [19:25]
-            bytes32(borrowAmount) // [25:57]
+            bytes32(amountToInvest) // [25:57]
         );
 
         bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
@@ -257,7 +259,14 @@ contract YieldCrabLever is YieldLeverBase {
 
         if (status == Operation.BORROW) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
-            _borrow(vaultId, seriesId, ilkId, borrowAmount, fee);
+            _borrow(
+                vaultId,
+                seriesId,
+                ilkId,
+                uint256(bytes32(data[25:57])),
+                borrowAmount,
+                fee
+            );
         } else if (status == Operation.REPAY) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
             _repay(
@@ -297,12 +306,14 @@ contract YieldCrabLever is YieldLeverBase {
     /// @param vaultId The vault id to put collateral into and borrow from.
     /// @param seriesId The pool (and thereby series) to borrow from.
     /// @param ilkId a
+    /// @param amountToInvest The amount of FYWeth borrowed in the flash loan.
     /// @param borrowAmount The amount of FYWeth borrowed in the flash loan.
     /// @param fee The fee that will be issued by the flash loan.
     function _borrow(
         bytes12 vaultId,
         bytes6 seriesId,
         bytes6 ilkId,
+        uint256 amountToInvest,
         uint256 borrowAmount,
         uint256 fee
     ) internal {
@@ -314,7 +325,9 @@ contract YieldCrabLever is YieldLeverBase {
         uint256 baseReceived = pool.sellFYToken(address(this), 0);
 
         if (ilkId == wethId) {
-            weth.withdraw(baseReceived);
+            if (address(this).balance == amountToInvest)
+                weth.withdraw(baseReceived);
+            else weth.withdraw(baseReceived + amountToInvest);
         } else if (ilkId == daiId || ilkId == usdcId) {
             // Swap dai/usdc to get weth & withdraw
             weth.withdraw(_uniswap(cauldron.assets(ilkId), address(weth)));

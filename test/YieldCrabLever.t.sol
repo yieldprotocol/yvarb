@@ -138,7 +138,6 @@ abstract contract ZeroState is Test {
         uint128 minCollateral = 0;
 
         vaultId = lever.invest{value: baseAmount}(
-            YieldLeverBase.Operation.BORROW,
             seriesId,
             ilkId,
             baseAmount,
@@ -176,7 +175,6 @@ abstract contract ZeroState is Test {
         // console.log("inkValue      ", inkValue);
         uint128 minCollateral = 0;
         vaultId = lever.invest(
-            YieldLeverBase.Operation.BORROW,
             seriesId,
             ilkId,
             baseAmount,
