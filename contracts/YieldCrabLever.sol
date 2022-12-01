@@ -268,17 +268,10 @@ contract YieldCrabLever is YieldLeverBase {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
             _repay(borrowAmount + fee, token, pool, data);
         } else if (status == Operation.CLOSE) {
-            bytes12 vaultId = bytes12(data[7:19]);
-            bytes6 ilkId = bytes6(data[19:25]);
             // Approve the repayment to the lender.
+            // We double the amount of approval as the join will pull the debt payment & flash loan payment
             IERC20(token).safeApprove(msg.sender, 2 * borrowAmount + fee);
-
-            _close(
-                vaultId,
-                ilkId,
-                uint256(bytes32(data[25:57])), //ink
-                uint256(bytes32(data[57:89])) //art
-            );
+            _close(data);
         }
     }
 
@@ -365,8 +358,8 @@ contract YieldCrabLever is YieldLeverBase {
     ) internal {
         bytes12 vaultId = bytes12(data[7:19]);
         bytes6 ilkId = bytes6(data[19:25]);
-        uint256 ink = uint256(bytes32(data[25:57])); //ink
-        uint256 art = uint256(bytes32(data[57:89])); //art
+        uint256 ink = uint256(bytes32(data[25:57]));
+        uint256 art = uint256(bytes32(data[57:89]));
 
         // Payback debt to get back the underlying
         IERC20(fyToken).transfer(fyToken, art);
@@ -396,16 +389,12 @@ contract YieldCrabLever is YieldLeverBase {
     /// 2. Withdraw the crab received to get ETH
     /// 3. Deposit ETH to get WETH
     /// 4. If ilkId was USDC/DAI, swap WETH for USDC/DAI to payback the flash loan
-    /// @param vaultId The ID of the vault to close.
-    /// @param ilkId The id of the strategy.
-    /// @param ink The collateral to take from the vault.
-    /// @param art The debt to repay. This is denominated in fyTokens
-    function _close(
-        bytes12 vaultId,
-        bytes6 ilkId,
-        uint256 ink,
-        uint256 art
-    ) internal {
+    /// @param data The data that was passed to the flash loan.
+    function _close(bytes calldata data) internal {
+        bytes12 vaultId = bytes12(data[7:19]);
+        bytes6 ilkId = bytes6(data[19:25]);
+        uint256 ink = uint256(bytes32(data[25:57]));
+        uint256 art = uint256(bytes32(data[57:89]));
         ladle.close(
             vaultId,
             address(this),

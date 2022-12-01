@@ -60,7 +60,7 @@ abstract contract ZeroState is Test {
     }
 
     function setUp() public virtual {
-        vm.createSelectFork("MAINNET", 16075456);
+        vm.createSelectFork("TENDERLY", 16075456);
         address(0).call{value: address(this).balance}("");
         DataTypes.Series memory seriesData = cauldron.series(seriesId);
         unit = 10**IERC20Metadata(cauldron.assets(ilkId)).decimals();
@@ -214,7 +214,7 @@ abstract contract ZeroState is Test {
 
     function _checkProfitable() internal returns (bool) {
         console.log("initialUserBalance", initialUserBalance);
-        console.log("_currentBalance", _currentBalance());
+        console.log("_currentBalance   ", _currentBalance());
         return _currentBalance() > initialUserBalance;
     }
 
@@ -349,7 +349,7 @@ abstract contract VaultCreatedStateTest is VaultCreatedState {
 contract USDCZeroStateTest is ZeroStateTest {
     function setUp() public override {
         base = 25;
-        borrow = 1;
+        borrow = 10;
         seriesId = usdcSeriesId;
         ilkId = usdcIlkId;
         super.setUp();
@@ -359,7 +359,7 @@ contract USDCZeroStateTest is ZeroStateTest {
 contract USDCVaultCreatedStateTest is VaultCreatedStateTest {
     function setUp() public override {
         base = 25;
-        borrow = 1;
+        borrow = 10;
         seriesId = usdcSeriesId;
         ilkId = usdcIlkId;
         super.setUp();
@@ -369,7 +369,7 @@ contract USDCVaultCreatedStateTest is VaultCreatedStateTest {
 contract DAIZeroStateTest is ZeroStateTest {
     function setUp() public override {
         base = 25;
-        borrow = 1;
+        borrow = 10;
         seriesId = daiSeriesId;
         ilkId = daiIlkId;
         super.setUp();
@@ -379,7 +379,7 @@ contract DAIZeroStateTest is ZeroStateTest {
 contract DAIVaultCreatedStateTest is VaultCreatedStateTest {
     function setUp() public override {
         base = 25;
-        borrow = 1;
+        borrow = 10;
         seriesId = daiSeriesId;
         ilkId = daiIlkId;
         super.setUp();
