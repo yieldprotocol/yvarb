@@ -245,9 +245,11 @@ contract YieldCrabLever is YieldLeverBase {
         bytes calldata data
     ) external override returns (bytes32 returnValue) {
         returnValue = FLASH_LOAN_RETURN;
+
         Operation status = Operation(uint256(uint8(data[0])));
         bytes6 seriesId = bytes6(data[1:7]);
         IPool pool = IPool(ladle.pools(seriesId));
+
         // Test that the lender is either a fyToken contract or the join.
         if (
             msg.sender != address(pool.fyToken()) &&
@@ -256,18 +258,21 @@ contract YieldCrabLever is YieldLeverBase {
         // We trust the lender, so now we can check that we were the initiator.
         if (initiator != address(this)) revert FlashLoanFailure();
 
-        // Now that we trust the lender, we approve the flash loan repayment
-
+        // Based on the operation we call the correct function.
         if (status == Operation.BORROW) {
+            // Approve the repayment to the lender.
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
             _borrow(borrowAmount, fee, token, pool, data);
         } else if (status == Operation.REPAY) {
+            // Approve the repayment to the lender.
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
             _repay(borrowAmount + fee, token, pool, data);
         } else if (status == Operation.CLOSE) {
             bytes12 vaultId = bytes12(data[7:19]);
             bytes6 ilkId = bytes6(data[19:25]);
+            // Approve the repayment to the lender.
             IERC20(token).safeApprove(msg.sender, 2 * borrowAmount + fee);
+
             _close(
                 vaultId,
                 ilkId,
@@ -309,13 +314,15 @@ contract YieldCrabLever is YieldLeverBase {
 
         // Get base by selling borrowed FYTokens.
         IERC20(fyToken).safeTransfer(address(pool), borrowAmount - fee);
-
         uint256 baseReceived = pool.sellFYToken(address(this), 0);
 
+        // Based on the ilk, we either deposit the base directly or
+        // we need to convert it to ETH first.
         if (ilkId == wethId) {
+            // TODO: Check what happens when the user sent amount of ETH less than amountToInvest
             if (address(this).balance == amountToInvest)
                 weth.withdraw(baseReceived);
-            else weth.withdraw(baseReceived + amountToInvest);
+            else weth.withdraw(baseReceived + amountToInvest); // When user has supplied WETH
         } else if (ilkId == daiId || ilkId == usdcId) {
             // Swap dai/usdc to get weth & withdraw
             weth.withdraw(_uniswap(cauldron.assets(ilkId), address(weth)));
@@ -323,7 +330,7 @@ contract YieldCrabLever is YieldLeverBase {
             revert();
         }
 
-        // deposit to get Crab
+        // Flash deposit ETH to get Crab
         crabStrategy.flashDeposit{value: address(this).balance}(
             address(this).balance,
             3000
@@ -365,6 +372,7 @@ contract YieldCrabLever is YieldLeverBase {
         IERC20(fyToken).transfer(fyToken, art);
         _pour(vaultId, -ink.u128().i128(), -art.u128().i128());
 
+        // Flash withdraw the crab to get the ETH
         crabStrategy.flashWithdraw(ink, type(uint256).max, 3000);
 
         weth.deposit{value: address(this).balance}();
@@ -375,9 +383,10 @@ contract YieldCrabLever is YieldLeverBase {
         uint128 fyTokenToBuy = borrowAmountPlusFee.u128();
         pool.base().transfer(
             address(pool),
-            pool.buyFYTokenPreview(fyTokenToBuy) + 1
+            pool.buyFYTokenPreview(fyTokenToBuy) + 1 // Extra wei is to counter the Euler calculation bug
         );
 
+        // Buy fyToken to pay back flash loan
         pool.buyFYToken(address(this), fyTokenToBuy, 0);
     }
 
@@ -403,8 +412,12 @@ contract YieldCrabLever is YieldLeverBase {
             -ink.u128().i128(),
             -art.u128().i128()
         );
+
+        // Flash withdraw the crab to get the ETH
         crabStrategy.flashWithdraw(ink, type(uint256).max, 3000);
         weth.deposit{value: address(this).balance}();
+
+        // If ilkId was USDC/DAI, swap WETH for USDC/DAI to payback the flash loan
         if (ilkId != wethId) {
             _uniswap(address(weth), cauldron.assets(ilkId));
         }
