@@ -23,7 +23,6 @@ contract YieldNotionalLever is YieldLeverBase, ERC1155TokenReceiver {
     using CastU256I256 for uint256;
     Notional constant notional =
         Notional(0x1344A36A1B56144C3Bc62E7757377D288fDE0369);
-    bytes6 constant ASSET_ID_MASK = 0xFFFF00000000;
 
     /// @notice Struct to store fcash related information for an ilk
     /// @param join The join of the underlying asset

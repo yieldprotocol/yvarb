@@ -69,9 +69,6 @@ contract YieldCrabLever is YieldLeverBase {
     using CastU128I128 for uint128;
     using CastU256U128 for uint256;
 
-    /// @notice WEth.
-    IWETH9 public constant weth =
-        IWETH9(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     ICrabStrategy public constant crabStrategy =
         ICrabStrategy(0x3B960E47784150F5a63777201ee2B15253D713e8);
 
@@ -82,14 +79,6 @@ contract YieldCrabLever is YieldLeverBase {
     bytes6 public constant wethId = 0x303000000000;
     bytes6 public constant daiId = 0x303100000000;
     bytes6 public constant usdcId = 0x303200000000;
-
-    event Invested(
-        bytes12 indexed vaultId,
-        bytes6 seriesId,
-        address indexed investor,
-        uint256 investment,
-        uint256 debt
-    );
 
     constructor(Giver giver_) YieldLeverBase(giver_) {}
 
@@ -122,18 +111,6 @@ contract YieldCrabLever is YieldLeverBase {
                 weth.withdraw(amountToInvest);
             }
         }
-        // for ETH borrowing,
-        // 1. flash borrow fyETH
-        // 2. sell for ETH and combine with user ETH
-        // 3. deposit to get Crab
-        // 4. borrow against crab to payback flash loan
-
-        //for USDC borrowing,
-        // 1. flash borrow fyUSDC
-        // 2. sell for USDC and combine with USDC
-        // 3. sell USDC for ETH
-        // 4. deposit to get Crab
-        // 5. borrow against crab to payback flashloan
 
         // Build the vault
         (vaultId, ) = ladle.build(seriesId, crabId, 0);
@@ -143,9 +120,7 @@ contract YieldCrabLever is YieldLeverBase {
             seriesId, // [1:7]
             vaultId, // [7:19]
             ilkId, // [19:25]
-            bytes32(amountToInvest), // [25:57]
-            bytes32(borrowAmount), // [57:89]
-            bytes32(minCollateral) // [89:121]
+            bytes32(borrowAmount) // [25:57]
         );
 
         bool success = IERC3156FlashLender(address(fyToken)).flashLoan(
@@ -249,7 +224,7 @@ contract YieldCrabLever is YieldLeverBase {
         uint256 tokenBalance = token.balanceOf(address(this));
         if (tokenBalance < minBaseOut) revert SlippageFailure();
         // Transferring the leftover to the user
-        if (tokenBalance > 0) token.safeTransfer(msg.sender, tokenBalance);
+        token.safeTransfer(msg.sender, tokenBalance);
         // Give the vault back to the sender, just in case there is anything left
         giver.give(vaultId, msg.sender);
     }
@@ -279,16 +254,12 @@ contract YieldCrabLever is YieldLeverBase {
 
         if (status == Operation.BORROW) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
-            uint256 baseAmount = uint256(bytes32(data[25:57]));
-            uint256 minCollateral = uint256(bytes32(data[89:121]));
             _borrow(
                 vaultId,
                 seriesId,
                 ilkId,
-                baseAmount,
                 borrowAmount,
-                fee,
-                minCollateral
+                fee
             );
         } else if (status == Operation.REPAY) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
@@ -314,22 +285,29 @@ contract YieldCrabLever is YieldLeverBase {
 
     /// @notice This function is called from within the flash loan. The high
     ///     level functionality is as follows:
+    ///     for ETH borrowing,
+    ///      1. flash borrow fyETH
+    ///      2. sell for ETH and combine with user ETH
+    ///      3. deposit to get Crab
+    ///      4. borrow against crab to payback flash loan
+    ///
+    ///     for USDC/DAI borrowing,
+    ///      1. flash borrow fyUSDC
+    ///      2. sell for USDC and combine with USDC
+    ///      3. sell USDC for ETH
+    ///      4. deposit to get Crab
+    ///      5. borrow against crab to payback flashloan
     /// @param vaultId The vault id to put collateral into and borrow from.
     /// @param seriesId The pool (and thereby series) to borrow from.
     /// @param ilkId a
-    /// @param baseAmount The amount of own collateral to supply.
     /// @param borrowAmount The amount of FYWeth borrowed in the flash loan.
     /// @param fee The fee that will be issued by the flash loan.
-    /// @param minCollateral The final amount of collateral to end up with, or
-    ///     the function will revert. Used to prevent slippage.
     function _borrow(
         bytes12 vaultId,
         bytes6 seriesId,
         bytes6 ilkId,
-        uint256 baseAmount,
         uint256 borrowAmount,
-        uint256 fee,
-        uint256 minCollateral
+        uint256 fee
     ) internal {
         IPool pool = IPool(ladle.pools(seriesId));
         IMaturingToken fyToken = pool.fyToken();
@@ -385,11 +363,16 @@ contract YieldCrabLever is YieldLeverBase {
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0
             });
-
         amountReceived = swapRouter.exactInputSingle(params);
     }
 
     /// @notice Unwind position and repay using fyToken
+    /// Here are the steps:
+    /// 1. Pay off the debt by using the flash borrowed fyToken
+    /// 2. Flash withdraw the crab to get the ETH
+    /// 3. Deposit ETH to get WETH
+    /// 4. Swap WETH for USDC/DAI if ilk is USDC/DAI
+    /// 5. Buy fyToken to pay back flash loan
     /// @param vaultId The vault to repay.
     /// @param seriesId The seriesId corresponding to the vault.
     /// @param ilkId The id of the strategy being invested.
@@ -433,6 +416,11 @@ contract YieldCrabLever is YieldLeverBase {
     }
 
     /// @notice Unwind position using the base asset and redeeming any fyToken
+    /// Here are the steps:
+    /// 1. Close the position with the flashloaned WETH/USDC/DAI
+    /// 2. Withdraw the crab received to get ETH
+    /// 3. Deposit ETH to get WETH
+    /// 4. If ilkId was USDC/DAI, swap WETH for USDC/DAI to payback the flash loan
     /// @param vaultId The ID of the vault to close.
     /// @param ilkId The id of the strategy.
     /// @param ink The collateral to take from the vault.
