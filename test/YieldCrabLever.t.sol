@@ -21,37 +21,79 @@ import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 abstract contract ZeroState is Test {
     address timeLock = 0x3b870db67a45611CF4723d44487EAF398fAc51E3;
     address ethWhale = 0xDA9dfA130Df4dE4673b89022EE50ff26f6EA73Cf;
+    address wethWhale = 0xF04a5cC80B1E94C69B48f5ee68a08CD2F09A7c3E;
     address daiWhale = 0xDA9dfA130Df4dE4673b89022EE50ff26f6EA73Cf;
     address usdcWhale = 0xDA9dfA130Df4dE4673b89022EE50ff26f6EA73Cf;
-    YieldCrabLever lever;
-    Protocol protocol;
     Giver giver = Giver(0xa98F3211997FDB072B6a8E2C2A26C34BC447f873);
-
-    IPool public pool;
-    FlashJoin flashJoin;
-    bytes6 public seriesId = 0x303230380000; //0x303130380000; //0x303030380000;
-    bytes6 public ilkId = 0x303200000000; //0x303100000000; //0x303000000000;
+    IQuoter uniswapQuoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
     ICauldron cauldron = ICauldron(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867);
-
     IERC20 constant weth = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     IERC20 constant usdc = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
     IERC20 constant dai = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    FYToken fyToken;
-    IQuoter uniswapQuoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
+    ILadle constant ladle = ILadle(0x6cB18fF2A33e981D1e38A663Ca056c0a5265066A);
+
+    YieldCrabLever lever;
+    Protocol protocol;
+    IPool public pool;
+    FlashJoin flashJoin;
+    FYToken public fyToken;
+
+    bytes6 constant usdcIlkId = 0x303200000000;
+    bytes6 constant daiIlkId = 0x303100000000;
+    bytes6 constant ethIlkId = 0x303000000000;
+    bytes6 constant usdcSeriesId = 0x303230380000;
+    bytes6 constant daiSeriesId = 0x303130380000;
+    bytes6 constant ethSeriesId = 0x303030380000;
+    bytes6 public seriesId; // = 0x303230380000; //0x303130380000; //0x303030380000;
+    bytes6 public ilkId; // = 0x303200000000; //0x303100000000; //0x303000000000;
+
+    uint256 public base;
+    uint256 public borrow;
+    uint256 public unit;
+    uint256 public initialUserBalance;
+    uint256 public finalUserBalance;
+    uint256 public balanceAfterInvest;
+    bool public isEth;
 
     constructor() {
         protocol = new Protocol();
-        // vm.prank(ethWhale);
-        // address(this).call{value: 10000e18}("");
-        // vm.prank(daiWhale);
-        // dai.transfer(address(this), 10000e18);
-        vm.prank(usdcWhale);
-        usdc.transfer(address(this), 250e6);
     }
 
     function setUp() public virtual {
-        // Cauldron cauldron_ = new Cauldron();
-        // vm.etch(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867,address(cauldron_));
+        vm.createSelectFork("MAINNET", 16075456);
+        address(0).call{value: address(this).balance}("");
+        DataTypes.Series memory seriesData = cauldron.series(seriesId);
+        unit = 10**IERC20Metadata(cauldron.assets(ilkId)).decimals();
+        pool = IPool(ladle.pools(seriesId));
+        fyToken = FYToken(address(pool.fyToken()));
+
+        vm.label(address(fyToken), fyToken.symbol());
+
+        if (ilkId == usdcIlkId) {
+            vm.prank(usdcWhale);
+            usdc.transfer(address(this), base * unit);
+
+            initialUserBalance = usdc.balanceOf(address(this));
+        }
+        if (ilkId == daiIlkId) {
+            vm.prank(daiWhale);
+            dai.transfer(address(this), base * unit);
+
+            initialUserBalance = dai.balanceOf(address(this));
+        }
+        if (ilkId == ethIlkId) {
+            if (isEth) {
+                vm.prank(ethWhale);
+                address(this).call{value: base * unit}("");
+            } else {
+                vm.prank(wethWhale);
+                weth.transfer(address(this), base * unit);
+            }
+            initialUserBalance =
+                address(this).balance +
+                weth.balanceOf(address(this));
+        }
+
         lever = new YieldCrabLever(giver);
 
         //Label
@@ -59,10 +101,12 @@ abstract contract ZeroState is Test {
 
         usdc.approve(address(lever), type(uint256).max);
         dai.approve(address(lever), type(uint256).max);
+        weth.approve(address(lever), type(uint256).max);
+
         vm.startPrank(timeLock);
         AccessControl giverAccessControl = AccessControl(address(giver));
         giverAccessControl.grantRole(0xe4fd9dc5, timeLock);
-        giverAccessControl.grantRole(0x35775afb, address(lever));
+        giverAccessControl.grantRole(Giver.seize.selector, address(lever));
         vm.stopPrank();
     }
 
@@ -77,10 +121,9 @@ abstract contract ZeroState is Test {
     }
 
     /// @notice Create a vault.
-    function investETH(uint128 baseAmount, uint128 borrowAmount)
-        public
-        returns (bytes12 vaultId)
-    {
+    function investETH() public returns (bytes12 vaultId) {
+        uint256 baseAmount = base * unit;
+        uint256 borrowAmount = borrow * unit;
         DataTypes.SpotOracle memory spotOracle_ = cauldron.spotOracles(
             ilkId,
             lever.crabId()
@@ -102,34 +145,35 @@ abstract contract ZeroState is Test {
             borrowAmount,
             minCollateral
         );
+        balanceAfterInvest = _currentBalance();
     }
 
-    function investRest(uint128 baseAmount, uint128 borrowAmount)
-        public
-        returns (bytes12 vaultId)
-    {
+    function investRest() public returns (bytes12 vaultId) {
+        uint256 baseAmount = base * unit;
+        uint256 borrowAmount = borrow * unit;
+
         pool = IPool(lever.ladle().pools(seriesId));
-        uint256 receivedAmount = pool.sellFYTokenPreview(borrowAmount);
-        console.log("receivedAmount", receivedAmount);
-        console.log("baseAmount    ", baseAmount);
-        uint256 amountOut = uniswapQuoter.quoteExactInputSingle(
-            cauldron.assets(ilkId),
-            address(weth),
-            3000,
-            baseAmount + receivedAmount,
-            0
-        );
-        console.log("WETHamountOut ", amountOut); //weth
-        DataTypes.SpotOracle memory spotOracle_ = cauldron.spotOracles(
-            lever.wethId(),
-            lever.crabId()
-        );
-        (uint256 inkValue, ) = spotOracle_.oracle.get(
-            lever.wethId(),
-            lever.crabId(),
-            21251941204950600 - 11172773419489946
-        ); // ink * spot
-        console.log("inkValue      ", inkValue);
+        // uint256 receivedAmount = pool.sellFYTokenPreview(uint128(borrowAmount));
+        // console.log("receivedAmount", receivedAmount);
+        // console.log("baseAmount    ", baseAmount);
+        // uint256 amountOut = uniswapQuoter.quoteExactInputSingle(
+        //     cauldron.assets(ilkId),
+        //     address(weth),
+        //     3000,
+        //     baseAmount + receivedAmount,
+        //     0
+        // );
+        // console.log("WETHamountOut ", amountOut); //weth
+        // DataTypes.SpotOracle memory spotOracle_ = cauldron.spotOracles(
+        //     lever.wethId(),
+        //     lever.crabId()
+        // );
+        // (uint256 inkValue, ) = spotOracle_.oracle.get(
+        //     lever.wethId(),
+        //     lever.crabId(),
+        //     21251941204950600 - 11172773419489946
+        // ); // ink * spot
+        // console.log("inkValue      ", inkValue);
         uint128 minCollateral = 0;
         vaultId = lever.invest(
             YieldLeverBase.Operation.BORROW,
@@ -139,69 +183,84 @@ abstract contract ZeroState is Test {
             borrowAmount,
             minCollateral
         );
+        balanceAfterInvest = _currentBalance();
     }
+
+    function _currentBalance() internal returns (uint256) {
+        if (ilkId == usdcIlkId) {
+            return
+                usdc.balanceOf(address(this)) +
+                uniswapQuoter.quoteExactInputSingle(
+                    address(weth), // We are taking weth as we have eth leftover from crab deposit
+                    cauldron.assets(ilkId),
+                    3000,
+                    address(this).balance,
+                    0
+                );
+        }
+        if (ilkId == daiIlkId) {
+            return
+                dai.balanceOf(address(this)) +
+                uniswapQuoter.quoteExactInputSingle(
+                    address(weth), // We are taking weth as we have eth leftover from crab deposit
+                    cauldron.assets(ilkId),
+                    3000,
+                    address(this).balance,
+                    0
+                );
+        }
+        if (ilkId == ethIlkId) {
+            return address(this).balance + weth.balanceOf(address(this));
+        }
+    }
+
+    function _checkProfitable() internal returns (bool) {
+        console.log("initialUserBalance", initialUserBalance);
+        console.log("_currentBalance", _currentBalance());
+        return _currentBalance() > initialUserBalance;
+    }
+
+    function _noTokenLeftBehind() internal {
+        // No tokens should be left in the contract
+        assertEq(weth.balanceOf(address(lever)), 0);
+        assertEq(usdc.balanceOf(address(lever)), 0);
+        assertEq(dai.balanceOf(address(lever)), 0);
+        assertEq(fyToken.balanceOf(address(lever)), 0);
+        assertEq(address(lever).balance, 0);
+    }
+
+    receive() external payable {}
 }
 
-contract ZeroStateTest is ZeroState {
-    function setUp() public override {
+abstract contract ZeroStateTest is ZeroState {
+    function setUp() public virtual override {
         super.setUp();
     }
 
     function testVault() public {
-        // uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
-        // uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
-
-        bytes12 vaultId = investRest(25e6, 1e6);
-        // DataTypes.Vault memory vault = cauldron.vaults(vaultId);
-        // assertEq(vault.owner, address(this));
-
-        // // No tokens should be left in the contract
-        // assertEq(weth.balanceOf(address(lever)), 0);
-        // assertEq(wsteth.balanceOf(address(lever)), 0);
-        // assertEq(steth.balanceOf(address(lever)), 0);
-        // assertEq(fyToken.balanceOf(address(lever)), 0);
-
-        // // Assert that the join state is the same as the start
-        // assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
-        // assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
+        bytes12 vaultId = investRest();
+        DataTypes.Vault memory vault = cauldron.vaults(vaultId);
+        assertEq(vault.owner, address(this));
+        _noTokenLeftBehind();
     }
 
-    // function testLever() public {
-    //     uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
-    //     uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
-
-    //     bytes12 vaultId = invest(1e18, 3.5e18);
-    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
-    //     assertEq(balances.art, 3.5e18);
-
-    //     // No tokens should be left in the contract
-    //     assertEq(weth.balanceOf(address(lever)), 0);
-    //     assertEq(wsteth.balanceOf(address(lever)), 0);
-    //     assertEq(steth.balanceOf(address(lever)), 0);
-    //     assertEq(fyToken.balanceOf(address(lever)), 0);
-
-    //     // Assert that the join state is the same as the start
-    //     assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
-    //     assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
-    // }
-
     /// @notice This function should fail if called externally.
-    // function testOnFlashLoan() public {
-    //     vm.expectRevert(FlashLoanFailure.selector);
-    //     lever.onFlashLoan(
-    //         address(lever), // Lie!
-    //         address(fyToken),
-    //         1e18,
-    //         1e16,
-    //         bytes.concat(
-    //             bytes1(0x01),
-    //             seriesId,
-    //             bytes12(0),
-    //             bytes16(0),
-    //             bytes16(0)
-    //         )
-    //     );
-    // }
+    function testOnFlashLoan() public {
+        vm.expectRevert(FlashLoanFailure.selector);
+        lever.onFlashLoan(
+            address(lever), // Lie!
+            address(fyToken),
+            1e18,
+            1e16,
+            bytes.concat(
+                bytes1(0x01),
+                seriesId,
+                bytes12(0),
+                bytes16(0),
+                bytes16(0)
+            )
+        );
+    }
 
     // function testInvestRevertOnMinEth() public {
     //     uint128 baseAmount = 4e17;
@@ -221,84 +280,57 @@ contract ZeroStateTest is ZeroState {
 abstract contract VaultCreatedState is ZeroState {
     bytes12 vaultId;
 
-    function setUp() public override {
+    function setUp() public virtual override {
         super.setUp();
-        vaultId = investRest(25e6, 10e6);
+        vaultId = investRest(); //25e6, 10e6);
     }
 
     function unwind() internal returns (bytes12) {
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
-
         lever.divest(vaultId, seriesId, ilkId, balances.ink, balances.art, 0);
         return vaultId;
     }
 }
 
-contract VaultCreatedStateTest is VaultCreatedState {
-    function testRepay() public {
-        // uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
-        // uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
+abstract contract VaultCreatedStateTest is VaultCreatedState {
+    function setUp() public virtual override {
+        super.setUp();
+    }
 
+    function testRepay() public {
         unwind();
 
         DataTypes.Balances memory balances = cauldron.balances(vaultId);
         assertEq(balances.art, 0);
         assertEq(balances.ink, 0);
 
-        // // A very weak condition, but we should have at least some weth back.
-        // assertGt(weth.balanceOf(address(this)), 0);
-
-        // // No tokens should be left in the contract
-        // assertEq(weth.balanceOf(address(lever)), 0);
-        // assertEq(wsteth.balanceOf(address(lever)), 0);
-        // assertEq(steth.balanceOf(address(lever)), 0);
-        // assertEq(fyToken.balanceOf(address(lever)), 0);
-
-        // // Assert that the join state is the same as the start
-        // assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
-        // assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
+        _noTokenLeftBehind();
+        assert(_checkProfitable());
     }
 
     function testClose() public {
-        //     uint256 availableWStEthBalanceAtStart = availableBalance(wstethJoin);
-        //     uint256 availableWEthBalanceAtStart = availableBalance(wethJoin);
-        // FlashJoin join = new FlashJoin(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-        //         vm.etch(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,address(join).code);
         DataTypes.Series memory series_ = cauldron.series(seriesId);
 
         vm.warp(series_.maturity + 1);
-
         unwind();
-
-        //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
-        //     assertEq(balances.art, 0);
-        //     assertEq(balances.ink, 0);
-
-        //     // A very weak condition, but we should have at least some weth back.
-        //     assertGt(weth.balanceOf(address(this)), 0);
-
-        //     // No tokens should be left in the contract
-        //     assertEq(weth.balanceOf(address(lever)), 0);
-        //     assertEq(wsteth.balanceOf(address(lever)), 0);
-        //     assertEq(steth.balanceOf(address(lever)), 0);
-        //     assertEq(fyToken.balanceOf(address(lever)), 0);
-
-        //     // Assert that the join state is the same as the start
-        //     assertEq(availableBalance(wstethJoin), availableWStEthBalanceAtStart);
-        //     assertEq(availableBalance(wethJoin), availableWEthBalanceAtStart);
-        // }
-
-        // function testRepayRevertOnSlippage() public {
-        //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
-
-        //     // Rough calculation of the minimal amount of weth that we want back.
-        //     // In reality, the debt is not in weth but in fyWeth.
-        //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
-        //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
-
-        //     vm.expectRevert(SlippageFailure.selector);
-        //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+        assertEq(balances.art, 0);
+        assertEq(balances.ink, 0);
+        _noTokenLeftBehind();
+        assert(_checkProfitable());
     }
+
+    // function testRepayRevertOnSlippage() public {
+    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
+
+    //     // Rough calculation of the minimal amount of weth that we want back.
+    //     // In reality, the debt is not in weth but in fyWeth.
+    //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
+    //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
+
+    //     vm.expectRevert(SlippageFailure.selector);
+    //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
+    // }
 
     // function testCloseRevertOnSlippage() public {
     //     DataTypes.Series memory series_ = cauldron.series(seriesId);
@@ -314,4 +346,82 @@ contract VaultCreatedStateTest is VaultCreatedState {
     //     vm.expectRevert(SlippageFailure.selector);
     //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
     // }
+}
+
+contract USDCZeroStateTest is ZeroStateTest {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = usdcSeriesId;
+        ilkId = usdcIlkId;
+        super.setUp();
+    }
+}
+
+contract USDCVaultCreatedStateTest is VaultCreatedStateTest {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = usdcSeriesId;
+        ilkId = usdcIlkId;
+        super.setUp();
+    }
+}
+
+contract DAIZeroStateTest is ZeroStateTest {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = daiSeriesId;
+        ilkId = daiIlkId;
+        super.setUp();
+    }
+}
+
+contract DAIVaultCreatedStateTest is VaultCreatedStateTest {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = daiSeriesId;
+        ilkId = daiIlkId;
+        super.setUp();
+    }
+}
+
+contract WETHZeroStateTest is ZeroStateTest {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = ethSeriesId;
+        ilkId = ethIlkId;
+        super.setUp();
+    }
+}
+
+contract WETHVaultCreatedStateTest is VaultCreatedStateTest {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = ethSeriesId;
+        ilkId = ethIlkId;
+        super.setUp();
+    }
+}
+
+contract ETHVaultTest is ZeroState {
+    function setUp() public override {
+        base = 25;
+        borrow = 1;
+        seriesId = ethSeriesId;
+        ilkId = ethIlkId;
+        isEth = true;
+        super.setUp();
+    }
+
+    function testVault() public {
+        bytes12 vaultId = investETH();
+        DataTypes.Vault memory vault = cauldron.vaults(vaultId);
+        assertEq(vault.owner, address(this));
+        _noTokenLeftBehind();
+    }
 }

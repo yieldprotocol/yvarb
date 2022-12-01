@@ -141,6 +141,9 @@ contract YieldCrabLever is YieldLeverBase {
 
         giver.give(vaultId, msg.sender);
 
+        if (address(this).balance > 0)
+            payable(msg.sender).call{value: address(this).balance}("");
+
         emit Invested(
             vaultId,
             seriesId,
@@ -254,13 +257,7 @@ contract YieldCrabLever is YieldLeverBase {
 
         if (status == Operation.BORROW) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
-            _borrow(
-                vaultId,
-                seriesId,
-                ilkId,
-                borrowAmount,
-                fee
-            );
+            _borrow(vaultId, seriesId, ilkId, borrowAmount, fee);
         } else if (status == Operation.REPAY) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
             _repay(
@@ -410,8 +407,9 @@ contract YieldCrabLever is YieldLeverBase {
         uint128 fyTokenToBuy = borrowAmountPlusFee.u128();
         pool.base().transfer(
             address(pool),
-            pool.buyFYTokenPreview(fyTokenToBuy)
+            pool.buyFYTokenPreview(fyTokenToBuy) + 1
         );
+
         pool.buyFYToken(address(this), fyTokenToBuy, 0);
     }
 
