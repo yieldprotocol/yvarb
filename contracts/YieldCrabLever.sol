@@ -234,6 +234,9 @@ contract YieldCrabLever is YieldLeverBase {
         giver.give(vaultId, msg.sender);
     }
 
+    /// @notice Callback for the flash loan.
+    /// @dev Used as a router to the correct function based
+    ///      on the operation present in the data.
     function onFlashLoan(
         address initiator,
         address token, // The token, not checked as we check the lender address.
@@ -244,12 +247,10 @@ contract YieldCrabLever is YieldLeverBase {
         returnValue = FLASH_LOAN_RETURN;
         Operation status = Operation(uint256(uint8(data[0])));
         bytes6 seriesId = bytes6(data[1:7]);
-        bytes12 vaultId = bytes12(data[7:19]);
-        bytes6 ilkId = bytes6(data[19:25]);
-
+        IPool pool = IPool(ladle.pools(seriesId));
         // Test that the lender is either a fyToken contract or the join.
         if (
-            msg.sender != address(IPool(ladle.pools(seriesId)).fyToken()) &&
+            msg.sender != address(pool.fyToken()) &&
             msg.sender != address(ladle.joins(seriesId & ASSET_ID_MASK))
         ) revert FlashLoanFailure();
         // We trust the lender, so now we can check that we were the initiator.
@@ -259,29 +260,16 @@ contract YieldCrabLever is YieldLeverBase {
 
         if (status == Operation.BORROW) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
-            _borrow(
-                vaultId,
-                seriesId,
-                ilkId,
-                uint256(bytes32(data[25:57])),
-                borrowAmount,
-                fee
-            );
+            _borrow(borrowAmount, fee, token, pool, data);
         } else if (status == Operation.REPAY) {
             IERC20(token).safeApprove(msg.sender, borrowAmount + fee);
-            _repay(
-                vaultId,
-                seriesId,
-                ilkId,
-                borrowAmount + fee,
-                uint256(bytes32(data[25:57])), //ink
-                uint256(bytes32(data[57:89])) //art
-            );
+            _repay(borrowAmount + fee, token, pool, data);
         } else if (status == Operation.CLOSE) {
+            bytes12 vaultId = bytes12(data[7:19]);
+            bytes6 ilkId = bytes6(data[19:25]);
             IERC20(token).safeApprove(msg.sender, 2 * borrowAmount + fee);
             _close(
                 vaultId,
-                seriesId,
                 ilkId,
                 uint256(bytes32(data[25:57])), //ink
                 uint256(bytes32(data[57:89])) //art
@@ -303,24 +291,24 @@ contract YieldCrabLever is YieldLeverBase {
     ///      3. sell USDC for ETH
     ///      4. deposit to get Crab
     ///      5. borrow against crab to payback flashloan
-    /// @param vaultId The vault id to put collateral into and borrow from.
-    /// @param seriesId The pool (and thereby series) to borrow from.
-    /// @param ilkId a
-    /// @param amountToInvest The amount of FYWeth borrowed in the flash loan.
     /// @param borrowAmount The amount of FYWeth borrowed in the flash loan.
     /// @param fee The fee that will be issued by the flash loan.
+    /// @param fyToken The fyToken that was borrowed.
+    /// @param pool The pool from in which we will sell borrowed fyToken.
+    /// @param data The data that was passed to the flash loan.
     function _borrow(
-        bytes12 vaultId,
-        bytes6 seriesId,
-        bytes6 ilkId,
-        uint256 amountToInvest,
         uint256 borrowAmount,
-        uint256 fee
+        uint256 fee,
+        address fyToken,
+        IPool pool,
+        bytes calldata data
     ) internal {
-        IPool pool = IPool(ladle.pools(seriesId));
-        IMaturingToken fyToken = pool.fyToken();
+        bytes12 vaultId = bytes12(data[7:19]);
+        bytes6 ilkId = bytes6(data[19:25]);
+        uint256 amountToInvest = uint256(bytes32(data[25:57]));
+
         // Get base by selling borrowed FYTokens.
-        fyToken.safeTransfer(address(pool), borrowAmount - fee);
+        IERC20(fyToken).safeTransfer(address(pool), borrowAmount - fee);
 
         uint256 baseReceived = pool.sellFYToken(address(this), 0);
 
@@ -346,34 +334,8 @@ contract YieldCrabLever is YieldLeverBase {
             address(ladle.joins(crabId)),
             crabBalance
         );
-
         // borrow against crab to payback flashloan
-        ladle.pour(
-            vaultId,
-            address(this),
-            crabBalance.u128().i128(),
-            borrowAmount.u128().i128()
-        );
-    }
-
-    function _uniswap(address tokenIn_, address tokenOut_)
-        internal
-        returns (uint256 amountReceived)
-    {
-        uint256 amountIn_ = IERC20(tokenIn_).balanceOf(address(this));
-        IERC20(tokenIn_).approve(address(swapRouter), amountIn_);
-        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
-            .ExactInputSingleParams({
-                tokenIn: tokenIn_,
-                tokenOut: tokenOut_,
-                fee: 3000,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: amountIn_,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            });
-        amountReceived = swapRouter.exactInputSingle(params);
+        _pour(vaultId, crabBalance.u128().i128(), borrowAmount.u128().i128());
     }
 
     /// @notice Unwind position and repay using fyToken
@@ -383,32 +345,25 @@ contract YieldCrabLever is YieldLeverBase {
     /// 3. Deposit ETH to get WETH
     /// 4. Swap WETH for USDC/DAI if ilk is USDC/DAI
     /// 5. Buy fyToken to pay back flash loan
-    /// @param vaultId The vault to repay.
-    /// @param seriesId The seriesId corresponding to the vault.
-    /// @param ilkId The id of the strategy being invested.
     /// @param borrowAmountPlusFee The amount of fyToken that we have borrowed,
     ///     plus the fee. This should be our final balance.
-    /// @param ink The amount of collateral to retake.
-    /// @param art The debt to repay.
+    /// @param fyToken the fyToken that was borrowed.
+    /// @param pool The pool from which we will buy fyToken.
+    /// @param data The data that was passed to the flash loan.
     function _repay(
-        bytes12 vaultId,
-        bytes6 seriesId,
-        bytes6 ilkId,
         uint256 borrowAmountPlusFee,
-        uint256 ink,
-        uint256 art
+        address fyToken,
+        IPool pool,
+        bytes calldata data
     ) internal {
-        IPool pool = IPool(ladle.pools(seriesId));
-        address fyToken = address(pool.fyToken());
+        bytes12 vaultId = bytes12(data[7:19]);
+        bytes6 ilkId = bytes6(data[19:25]);
+        uint256 ink = uint256(bytes32(data[25:57])); //ink
+        uint256 art = uint256(bytes32(data[57:89])); //art
 
         // Payback debt to get back the underlying
         IERC20(fyToken).transfer(fyToken, art);
-        ladle.pour(
-            vaultId,
-            address(this),
-            -ink.u128().i128(),
-            -art.u128().i128()
-        );
+        _pour(vaultId, -ink.u128().i128(), -art.u128().i128());
 
         crabStrategy.flashWithdraw(ink, type(uint256).max, 3000);
 
@@ -438,7 +393,6 @@ contract YieldCrabLever is YieldLeverBase {
     /// @param art The debt to repay. This is denominated in fyTokens
     function _close(
         bytes12 vaultId,
-        bytes6,
         bytes6 ilkId,
         uint256 ink,
         uint256 art
@@ -454,6 +408,35 @@ contract YieldCrabLever is YieldLeverBase {
         if (ilkId != wethId) {
             _uniswap(address(weth), cauldron.assets(ilkId));
         }
+    }
+
+    function _pour(
+        bytes12 vaultId,
+        int128 crabBalance,
+        int128 borrowAmount
+    ) internal {
+        ladle.pour(vaultId, address(this), crabBalance, borrowAmount);
+    }
+
+    /// @notice Swap tokens using Uniswap
+    function _uniswap(address tokenIn_, address tokenOut_)
+        internal
+        returns (uint256 amountReceived)
+    {
+        uint256 amountIn_ = IERC20(tokenIn_).balanceOf(address(this));
+        IERC20(tokenIn_).approve(address(swapRouter), amountIn_);
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+            .ExactInputSingleParams({
+                tokenIn: tokenIn_,
+                tokenOut: tokenOut_,
+                fee: 3000,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: amountIn_,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+        amountReceived = swapRouter.exactInputSingle(params);
     }
 
     receive() external payable {}
