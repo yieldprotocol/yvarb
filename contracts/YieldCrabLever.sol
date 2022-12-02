@@ -441,5 +441,11 @@ contract YieldCrabLever is YieldLeverBase {
         amountReceived = swapRouter.exactInputSingle(params);
     }
 
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external {}
+
     receive() external payable {}
 }
