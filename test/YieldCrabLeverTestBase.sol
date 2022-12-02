@@ -292,7 +292,7 @@ abstract contract ZeroState is Test {
             lever.wethId(),
             lever.crabId(),
             value
-        ); // ink * spot
+        );
     }
 
     receive() external payable {}
@@ -387,30 +387,21 @@ abstract contract VaultCreatedStateTest is VaultCreatedState {
         assertTrue(_checkProfitable());
     }
 
-    // function testRepayRevertOnSlippage() public {
-    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
+    function testRepayRevertOnSlippage() public {
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+        uint256 minBaseOut = (initialUserBalance * 150) / 100;
 
-    //     // Rough calculation of the minimal amount of weth that we want back.
-    //     // In reality, the debt is not in weth but in fyWeth.
-    //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
-    //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
+        vm.expectRevert(SlippageFailure.selector);
+        lever.divest(vaultId, seriesId, ilkId, balances.ink, balances.art, minBaseOut);
+    }
 
-    //     vm.expectRevert(SlippageFailure.selector);
-    //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
-    // }
+    function testCloseRevertOnSlippage() public {
+        DataTypes.Series memory series_ = cauldron.series(seriesId);
+        DataTypes.Balances memory balances = cauldron.balances(vaultId);
+        uint256 minBaseOut = (initialUserBalance * 150) / 100;
+        vm.warp(series_.maturity + 1);
 
-    // function testCloseRevertOnSlippage() public {
-    //     DataTypes.Series memory series_ = cauldron.series(seriesId);
-    //     vm.warp(series_.maturity);
-
-    //     DataTypes.Balances memory balances = cauldron.balances(vaultId);
-
-    //     // Rough calculation of the minimal amount of weth that we want back.
-    //     // In reality, the debt is not in weth but in fyWeth.
-    //     uint256 collateralValueWeth = stableSwap.get_dy(1, 0, balances.ink);
-    //     uint256 minweth = (collateralValueWeth - balances.art) * 2;
-
-    //     vm.expectRevert(SlippageFailure.selector);
-    //     lever.divest(vaultId, seriesId, balances.ink, balances.art, minweth);
-    // }
+        vm.expectRevert(SlippageFailure.selector);
+        lever.divest(vaultId, seriesId, ilkId, balances.ink, balances.art, minBaseOut);
+    }
 }
