@@ -89,6 +89,7 @@ abstract contract ZeroState is Test {
     uint256 public finalUserBalance;
     uint256 public balanceAfterInvest;
     bool public isEth;
+    bytes12 public vaultId;
 
     constructor() {
         protocol = new Protocol();
@@ -156,7 +157,7 @@ abstract contract ZeroState is Test {
     }
 
     /// @notice Create a vault.
-    function investETH() public returns (bytes12 vaultId) {
+    function investETH() public returns (bytes12) {
         uint256 baseAmount = base * unit;
         uint256 borrowAmount = borrow * unit;
         DataTypes.SpotOracle memory spotOracle_ = cauldron.spotOracles(
@@ -180,41 +181,15 @@ abstract contract ZeroState is Test {
             minCollateral
         );
         balanceAfterInvest = _currentBalance();
+        return vaultId;
     }
 
-    function investRest() public returns (bytes12 vaultId) {
+    function investRest() public returns (bytes12) {
         uint256 baseAmount = base * unit;
         uint256 borrowAmount = borrow * unit;
 
-        pool = IPool(lever.ladle().pools(seriesId));
-        uint256 receivedAmount = pool.sellFYTokenPreview(uint128(borrowAmount));
+        uint256 minCollateral = uint256((_minCollateral() * 80) / 100);
 
-        uint256 amountOut;
-        if (ilkId != ethIlkId)
-            amountOut = uniswapQuoter.quoteExactInputSingle(
-                cauldron.assets(ilkId),
-                address(weth),
-                3000,
-                baseAmount + receivedAmount,
-                0
-            );
-
-        (uint256 value, uint256 refund) = _getValues(
-            ilkId == ethIlkId ? receivedAmount + baseAmount : amountOut
-        );
-
-        // console.log("WETHamountOut ", amountOut); //weth
-        DataTypes.SpotOracle memory spotOracle_ = cauldron.spotOracles(
-            lever.wethId(),
-            lever.crabId()
-        );
-        (uint256 inkValue, ) = spotOracle_.oracle.get(
-            lever.wethId(),
-            lever.crabId(),
-            value
-        ); // ink * spot
-
-        uint256 minCollateral = uint256((inkValue * 80) / 100);
         vaultId = lever.invest(
             seriesId,
             ilkId,
@@ -224,6 +199,8 @@ abstract contract ZeroState is Test {
         );
 
         balanceAfterInvest = _currentBalance();
+
+        return vaultId;
     }
 
     function _currentBalance() internal returns (uint256) {
@@ -255,8 +232,6 @@ abstract contract ZeroState is Test {
     }
 
     function _checkProfitable() internal returns (bool) {
-        console.log("initialUserBalance", initialUserBalance);
-        console.log("_currentBalance   ", _currentBalance());
         return _currentBalance() > initialUserBalance;
     }
 
@@ -290,6 +265,36 @@ abstract contract ZeroState is Test {
         refund = expectedEthProceeds + value - _ethToDeposit;
     }
 
+    function _minCollateral() internal returns (uint256 minCollateral) {
+        uint256 baseAmount = base * unit;
+        uint256 borrowAmount = borrow * unit;
+        pool = IPool(lever.ladle().pools(seriesId));
+        uint256 receivedAmount = pool.sellFYTokenPreview(uint128(borrowAmount));
+        uint256 amountOut;
+        if (ilkId != ethIlkId)
+            amountOut = uniswapQuoter.quoteExactInputSingle(
+                cauldron.assets(ilkId),
+                address(weth),
+                3000,
+                baseAmount + receivedAmount,
+                0
+            );
+
+        (uint256 value, uint256 refund) = _getValues(
+            ilkId == ethIlkId ? receivedAmount + baseAmount : amountOut
+        );
+
+        DataTypes.SpotOracle memory spotOracle_ = cauldron.spotOracles(
+            lever.wethId(),
+            lever.crabId()
+        );
+        (minCollateral, ) = spotOracle_.oracle.get(
+            lever.wethId(),
+            lever.crabId(),
+            value
+        ); // ink * spot
+    }
+
     receive() external payable {}
 }
 
@@ -299,7 +304,7 @@ abstract contract ZeroStateTest is ZeroState {
     }
 
     function testVault() public {
-        bytes12 vaultId = investRest();
+        vaultId = investRest();
 
         DataTypes.Vault memory vault = cauldron.vaults(vaultId);
 
@@ -326,22 +331,22 @@ abstract contract ZeroStateTest is ZeroState {
     }
 
     function testInvestRevertOnMinCollateral() public {
-        // uint128 baseAmount = 4e17;
-        // uint128 borrowAmount = 8e17;
-        // fyToken.approve(address(lever), baseAmount);
-        // // Unreasonable expectation: twice the total value as collateral?
-        // uint256 wethAmount = pool.sellFYTokenPreview(baseAmount + borrowAmount);
-        // uint128 minCollateral = uint128(
-        //     stableSwap.get_dy(0, 1, wethAmount) * 2
-        // );
-        // vm.expectRevert(SlippageFailure.selector);
-        // lever.invest{value: baseAmount}(seriesId, borrowAmount, minCollateral);
+        uint256 baseAmount = base * unit;
+        uint256 borrowAmount = borrow * unit;
+
+        uint256 minCollateral = (_minCollateral() * 150) / 100;
+        vm.expectRevert(SlippageFailure.selector);
+        vaultId = lever.invest(
+            seriesId,
+            ilkId,
+            baseAmount,
+            borrowAmount,
+            minCollateral
+        );
     }
 }
 
 abstract contract VaultCreatedState is ZeroState {
-    bytes12 vaultId;
-
     function setUp() public virtual override {
         super.setUp();
         vaultId = investRest(); //25e6, 10e6);
@@ -367,7 +372,7 @@ abstract contract VaultCreatedStateTest is VaultCreatedState {
         assertEq(balances.ink, 0);
 
         _noTokenLeftBehind();
-        assert(_checkProfitable());
+        assertTrue(_checkProfitable(), "Not profitable!");
     }
 
     function testClose() public {
@@ -379,7 +384,7 @@ abstract contract VaultCreatedStateTest is VaultCreatedState {
         assertEq(balances.art, 0);
         assertEq(balances.ink, 0);
         _noTokenLeftBehind();
-        assert(_checkProfitable());
+        assertTrue(_checkProfitable());
     }
 
     // function testRepayRevertOnSlippage() public {
