@@ -212,7 +212,7 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         bool success;
         if (uint32(block.timestamp) > CAULDRON.series(seriesId).maturity) {
             if (operation != Operation.REDEEM) revert OnlyRedeem();
-            address join = address(LADLE.joins(seriesId & ASSET_ID_MASK));
+            address join = address(LADLE.joins(cauldron.series(seriesId).baseId));
 
             // Redeem:
             // Series is past maturity, borrow and move directly to collateral pool.
@@ -243,7 +243,7 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
                     pool.sellFYToken(address(this), 0);
                 }
             } else if (operation == Operation.CLOSE) {
-                address join = address(LADLE.joins(seriesId & ASSET_ID_MASK));
+                address join = address(LADLE.joins(cauldron.series(seriesId).baseId));
 
                 // Close:
                 // Series is not past maturity, borrow and move directly to collateral pool.
