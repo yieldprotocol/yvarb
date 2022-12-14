@@ -35,7 +35,6 @@ contract YieldLeverBase is IERC3156FlashBorrower {
     /// @notice WEth.
     IWETH9 public constant weth =
         IWETH9(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-    bytes6 constant ASSET_ID_MASK = 0xFFFF00000000;
 
     /// @notice The operation to execute in the flash loan.
     enum Operation {

@@ -284,7 +284,7 @@ contract YieldNotionalLever is YieldLeverBase, ERC1155TokenReceiver {
         // Test that the lender is either a fyToken contract or the join.
         if (
             msg.sender != address(IPool(ladle.pools(seriesId)).fyToken()) &&
-            msg.sender != address(ladle.joins(seriesId & ASSET_ID_MASK))
+            msg.sender != address(ladle.joins(cauldron.series(seriesId).baseId))
         ) revert FlashLoanFailure();
         // We trust the lender, so now we can check that we were the initiator.
         if (initiator != address(this)) revert FlashLoanFailure();
