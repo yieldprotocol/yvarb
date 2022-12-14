@@ -69,8 +69,6 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
     bytes32 public constant FLASH_LOAN_RETURN =
         keccak256("ERC3156FlashBorrower.onFlashLoan");
 
-    bytes6 constant ASSET_ID_MASK = 0xFFFF00000000;
-
     /// @notice The Yield Cauldron, handles debt and collateral balances.
     ICauldron public constant CAULDRON =
         ICauldron(0xc88191F8cb8e6D4a668B047c1C8503432c3Ca867);
@@ -300,7 +298,7 @@ contract YieldStrategyLever is IERC3156FlashBorrower {
         // Test that the lender is either a fyToken contract or the join.
         if (
             msg.sender != address(IPool(LADLE.pools(seriesId)).fyToken()) &&
-            msg.sender != address(LADLE.joins(cauldron.series(seriesId).baseId))
+            msg.sender != address(LADLE.joins(CAULDRON.series(seriesId).baseId))
         ) revert FlashLoanFailure();
         // We trust the lender, so now we can check that we were the initiator.
         if (initiator != address(this)) revert FlashLoanFailure();
