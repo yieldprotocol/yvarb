@@ -182,7 +182,7 @@ contract YieldCrabLever is YieldLeverBase {
                 bytes32(art)
             );
 
-            address join = address(ladle.joins(cauldron(seriesId).baseId));
+            address join = address(ladle.joins(cauldron.series(seriesId).baseId));
 
             // Close:
             // Series is not past maturity, borrow and move directly to collateral pool.
