@@ -134,6 +134,7 @@ contract YieldCrabLever is YieldLeverBase {
 
         giver.give(vaultId, msg.sender);
 
+        // This is end of execution so no concern for reentrancy here
         if (address(this).balance > 0)
             payable(msg.sender).call{value: address(this).balance}("");
 
