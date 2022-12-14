@@ -214,7 +214,6 @@ contract YieldCrabLever is YieldLeverBase {
                 art, // Loan Amount: borrow exactly the debt to repay.
                 data
             );
-            require(IERC20(address(fyToken)).balanceOf(address(this)) == 0);
         }
         if (!success) revert FlashLoanFailure();
         IERC20 baseToken = IERC20(cauldron.assets(baseId));
