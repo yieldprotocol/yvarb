@@ -376,7 +376,7 @@ contract YieldNotionalLever is YieldLeverBase, ERC1155TokenReceiver {
         }
         IPool pool = IPool(ladle.pools(seriesId));
 
-        uint128 maxFyOut = pool.buyBasePreview(borrowAmount.u128());
+        uint128 maxFyOut = pool.buyBasePreview(borrowAmount.u128() + 5);
 
         ladle.pour(
             vaultId,
@@ -385,7 +385,7 @@ contract YieldNotionalLever is YieldLeverBase, ERC1155TokenReceiver {
             (maxFyOut).i128()
         );
 
-        pool.buyBase(address(this), borrowAmount.u128(), maxFyOut);
+        pool.buyBase(address(this), borrowAmount.u128() + 5, maxFyOut);
     }
 
     /// @param vaultId The vault to repay.
